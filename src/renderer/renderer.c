@@ -22,10 +22,7 @@ module_desc_t load(core_interface_t *core){
     core->event_listen("loop", (event_callback_t)loop);
     core->event_listen("quit", (event_callback_t)quit);
     
-    const char* modid = "renderer";
 
-    core->require_version("ui", (version_t){0, 0, 0}, (version_t){0, 9, 9});
-    core->require("world");
 
 
     return (module_desc_t){

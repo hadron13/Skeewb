@@ -140,8 +140,8 @@ void core_event_listen  (const char *name, event_callback_t callback);
 void     core_config_set(config_t config);
 config_t core_config_get(const char *name);
 
-void         core_require_version(const char *modid, version_t min_version, version_t max_version);
-void         core_require(const char *modid);
+void core_require_version(const char *modid, version_t min_version, version_t max_version);
+void core_require(const char *modid);
 
 interface_t* core_module_get_interface(const char *modid);
 void         core_module_reload(const char *modid);
@@ -150,6 +150,10 @@ void core_quit(int status);
 
 void core_log_(log_category_t category, char *restrict format, ...);
 #define core_log(category, format, ...) core_log_(category, "[\033[34m" MODULE" |"__FILE__ ":\033[35m%d \033[93m%s()\033[0m] "format, __LINE__, __func__ __VA_OPT__(,) __VA_ARGS__)
+
+
+void parse_argument(char *arg);
+bool version_valid(version_t version, version_t min, version_t max);
 
 char                **platform_enumerate_directory(char *directory_path, bool directories); // returns dynamic array of strings
 shared_object_t      *platform_library_load(char *path);
@@ -214,6 +218,15 @@ int main(int argc, char **argv) {
 
     core_log(INFO, "starting");
 
+    FILE *config_file = fopen("config.txt", "r");
+    if(!config_file){
+        core_log(INFO, "reading config file");
+        // TODO: read config file
+        
+
+    }
+
+
     if(argc > 1){
         core_log(INFO, "parsing arguments");
         for(size_t i = 1; i < argc; i++){
@@ -223,54 +236,7 @@ int main(int argc, char **argv) {
                 core_log(ERROR, "invalid argument: %s", current_arg);
                 continue;
             }
-
-            char *first_equal = strchr(current_arg, '=');
-            if(!first_equal){ 
-                core_config_set((config_t){
-                    .name = current_arg + 1,
-                    .type = BOOLEAN,
-                    .value.boolean = true
-                });
-                continue;
-            }   
-            size_t name_length = first_equal - 1 - current_arg ; 
-            size_t value_length = strlen(first_equal) - 1;
-            
-            if(name_length == 0){
-                core_log(ERROR, "in argument \"%s\", no variable name found", current_arg);
-                continue;
-            }
-            if(value_length == 0){
-                core_log(ERROR, "in argument \"%s\", no value found", current_arg);
-                continue;
-            }
-            
-            char *name = string_duplicate_len(current_arg + 1, name_length);
-            char *value = string_duplicate_len(first_equal + 1, value_length); 
-            
-            config_t config_entry = {.name = name};
-            
-            if(strcmp(value, "true") == 0){
-                config_entry.type = BOOLEAN;
-                config_entry.value.boolean = true;
-            }else if(strcmp(value, "false") == 0){
-                config_entry.type = BOOLEAN;
-                config_entry.value.boolean = false;
-            }else if(isdigit(value[0])){
-                if(strchr(value, '.') == NULL){
-                    config_entry.type = INTEGER;
-                    config_entry.value.integer = atoi(value);
-                }else{
-                    config_entry.type = REAL;
-                    config_entry.value.real = atof(value);
-                } 
-            }else{
-                config_entry.type = STRING;
-                config_entry.value.string = value;
-            }
-            core_config_set(config_entry);
-            free(name);
-            free(value);
+            parse_argument(argv[i] + 1);
         }
     }
 
@@ -293,7 +259,7 @@ int main(int argc, char **argv) {
     core_event_register("start");
     core_event_register("loop");
     core_event_register("quit");
-       
+
     core_log(INFO, "mod directory: %s", mod_directory_path);
     for(size_t i = 0; i < list_size(mod_names); i++){
         char *mod_filename = mod_names[i];
@@ -317,7 +283,7 @@ int main(int argc, char **argv) {
         
 
         module_t module_entry = {
-            .name = descriptor.modid,
+            .name = string_duplicate(descriptor.modid),
             .version = descriptor.version,
             .interface = descriptor.interface,
             .shared_object = mod_so, 
@@ -351,22 +317,20 @@ void cleanup(void){
     }
     list_free(events);
     str_hash_destroy(&event_hashtable);
-
     for(size_t i = 0; i < list_size(configs); i++){
         free(configs[i].name);
         if(configs[i].type == STRING)
             free(configs[i].value.string);
     }
     list_free(configs);
-
-
-
 }
 
 void core_quit(int status){
     core_event_trigger("quit", &core_interface);
     exit(status);
-    }
+}
+
+// ===== ===== Events ===== =====
 
 void core_event_register(const char* name){
     event_t event = {
@@ -394,20 +358,31 @@ void core_event_listen(const char *name, event_callback_t callback){
     list_push(events[index].callbacks, callback);
 }
 
+// ===== ===== Configs ===== =====
+
 void core_config_set(config_t config){
+
+    size_t index = str_hash_lookup(&config_hashtable, config.name);
+    if(index != UINT64_MAX){
+        if(configs[index].type == STRING){
+            free(configs[index].value.string);
+        }
+
+        configs[index].type = config.type;
+        if(config.type == STRING){
+            configs[index].value.string = string_duplicate(config.value.string);
+        }else{
+            configs[index].value = config.value;
+        }
+        return;
+    }
+
     config_t copy = (config_t){.name = string_duplicate(config.name), .type = config.type};
     if(config.type == STRING){
         copy.value.string = string_duplicate(config.value.string);
     }else{
         copy.value = config.value;
     }
-
-    size_t index = str_hash_lookup(&config_hashtable, config.name);
-    if(index != UINT64_MAX){
-        configs[index] = copy; 
-        return;
-    }
-
     list_push(configs, copy);
     str_hash_insert(&config_hashtable, copy.name, list_size(configs) - 1);
 }
@@ -415,12 +390,13 @@ void core_config_set(config_t config){
 config_t core_config_get(const char *name){
     uint64_t index = str_hash_lookup(&config_hashtable, name);
     
-    if(index > list_size(configs)){
-        config_t empty = {.name = "empty", .type = EMPTY, .value.integer = 0 };
-        return empty;
+    if(index == UINT64_MAX){
+        return (config_t){.name = "empty", .type = EMPTY, .value.integer = 0 };
     }
     return configs[index];
 }
+
+// ===== ===== Module Management ===== =====
 
 void core_require_version(const char *modid, version_t min_version, version_t max_version){
     
@@ -431,8 +407,77 @@ void core_require(const char *modid){
 }
 
 interface_t* core_module_get_interface(const char *modid){
-
+    return NULL;
 }
+
+// ===== ===== General Utilities ===== =====
+
+void parse_argument(char *arg){
+        char *first_equal = strchr(arg, '=');
+        if(!first_equal){ 
+            core_config_set((config_t){
+                .name = arg,
+                .type = BOOLEAN,
+                .value.boolean = true
+            });
+            return; 
+        }   
+        size_t name_length = first_equal - arg; 
+        size_t value_length = strlen(first_equal) - 1;
+        
+        if(name_length == 0){
+            core_log(ERROR, "in argument \"%s\", no variable name found", arg);
+            return; 
+        }
+        if(value_length == 0){
+            core_log(ERROR, "in argument \"%s\", no value found", arg);
+            return;
+        }
+        
+        char *name = string_duplicate_len(arg, name_length);
+        char *value = string_duplicate_len(first_equal + 1, value_length); 
+        
+        config_t config_entry = {.name = name};
+        
+        if(strcmp(value, "true") == 0){
+            config_entry.type = BOOLEAN;
+            config_entry.value.boolean = true;
+        }else if(strcmp(value, "false") == 0){
+            config_entry.type = BOOLEAN;
+            config_entry.value.boolean = false;
+        }else if(isdigit(value[0])){
+            if(strchr(value, '.') == NULL){
+                config_entry.type = INTEGER;
+                config_entry.value.integer = atoi(value);
+            }else{
+                config_entry.type = REAL;
+                config_entry.value.real = atof(value);
+            } 
+        }else{
+            config_entry.type = STRING;
+            config_entry.value.string = value;
+        }
+        core_config_set(config_entry);
+        free(name);
+        free(value);
+}
+
+bool version_valid(version_t version, version_t min, version_t max){
+
+    uint64_t version_mask = ((uint64_t)version.major << 32) + ((uint64_t)version.minor << 16) + version.patch; 
+    uint64_t min_mask =     ((uint64_t)min.major << 32)     + ((uint64_t)min.minor << 16)     + min.patch;
+    uint64_t max_mask =     ((uint64_t)max.major << 32)     + ((uint64_t)max.minor << 16)     + max.patch; 
+
+    if(version_mask < min_mask)
+        return false;
+    if(version_mask > max_mask)
+        return false;
+
+    return true;
+}
+
+
+// ===== ===== Platform Abstraction ===== =====
 
 char **platform_enumerate_directory(char *directory_path, bool directories) {
     if (directory_path == NULL) {
@@ -506,6 +551,7 @@ function_pointer_t *platform_library_load_symbol(shared_object_t *object, char *
     }
     return function;
 }
+
 void platform_library_unload(shared_object_t *object) {
     #ifdef UNIX
         dlclose(object);
@@ -513,7 +559,6 @@ void platform_library_unload(shared_object_t *object) {
         FreeLibrary(object);
     #endif 
 }
-
 
 void core_log_(log_category_t category, char *restrict format, ...){
     FILE *output_file = stderr;
