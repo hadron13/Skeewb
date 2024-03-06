@@ -54,4 +54,5 @@ dkms.conf
 
 build/
 .cache/
+crane
 compile_commands.json

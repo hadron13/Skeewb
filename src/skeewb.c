@@ -33,12 +33,16 @@
 #define PATH_SEPARATOR '\\'
 #define PATH_SEPARATOR_STR "\\"
 #define DYLIB_EXTENSION ".dll"
+#define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+
+//thank you microsoft
+#undef interface
+#undef ERROR
+#define BOOLEAN BOOLEAN_
+
 #endif
 
-//mingw complains about these
-#undef interface
-#undef ERROR 
 
 #define ICE_CPU_IMPL
 #include "libs/ice_cpu.h"
@@ -265,6 +269,11 @@ int main(int argc, char **argv) {
         char *mod_filename = mod_names[i];
         char *mod_path = string_join(3, mod_directory_path, PATH_SEPARATOR_STR, mod_filename);
 
+        if(strcmp(string_extension(mod_filename), DYLIB_EXTENSION) != 0){
+            free(mod_path);
+            continue;
+        }
+
         core_log(INFO, "loading %s", mod_filename);
         shared_object_t *mod_so = platform_library_load(mod_path);
         free(mod_path);
@@ -277,10 +286,8 @@ int main(int argc, char **argv) {
         start_func_t start = (start_func_t)platform_library_load_symbol(mod_so, "load");
         if(!start)
             continue;
-        
 
         module_desc_t descriptor = start(&core_interface);
-        
 
         module_t module_entry = {
             .name = string_duplicate(descriptor.modid),
@@ -326,6 +333,7 @@ void cleanup(void){
 }
 
 void core_quit(int status){
+    core_log(INFO, "quitting with status %d...", status);
     core_event_trigger("quit", &core_interface);
     exit(status);
 }
@@ -413,53 +421,53 @@ interface_t* core_module_get_interface(const char *modid){
 // ===== ===== General Utilities ===== =====
 
 void parse_argument(char *arg){
-        char *first_equal = strchr(arg, '=');
-        if(!first_equal){ 
-            core_config_set((config_t){
-                .name = arg,
-                .type = BOOLEAN,
-                .value.boolean = true
-            });
-            return; 
-        }   
-        size_t name_length = first_equal - arg; 
-        size_t value_length = strlen(first_equal) - 1;
-        
-        if(name_length == 0){
-            core_log(ERROR, "in argument \"%s\", no variable name found", arg);
-            return; 
-        }
-        if(value_length == 0){
-            core_log(ERROR, "in argument \"%s\", no value found", arg);
-            return;
-        }
-        
-        char *name = string_duplicate_len(arg, name_length);
-        char *value = string_duplicate_len(first_equal + 1, value_length); 
-        
-        config_t config_entry = {.name = name};
-        
-        if(strcmp(value, "true") == 0){
-            config_entry.type = BOOLEAN;
-            config_entry.value.boolean = true;
-        }else if(strcmp(value, "false") == 0){
-            config_entry.type = BOOLEAN;
-            config_entry.value.boolean = false;
-        }else if(isdigit(value[0])){
-            if(strchr(value, '.') == NULL){
-                config_entry.type = INTEGER;
-                config_entry.value.integer = atoi(value);
-            }else{
-                config_entry.type = REAL;
-                config_entry.value.real = atof(value);
-            } 
+    char *first_equal = strchr(arg, '=');
+    if(!first_equal){ 
+        core_config_set((config_t){
+            .name = arg,
+            .type = BOOLEAN,
+            .value.boolean = true
+        });
+        return; 
+    }   
+    size_t name_length = first_equal - arg; 
+    size_t value_length = strlen(first_equal) - 1;
+    
+    if(name_length == 0){
+        core_log(ERROR, "in argument \"%s\", no variable name found", arg);
+        return; 
+    }
+    if(value_length == 0){
+        core_log(ERROR, "in argument \"%s\", no value found", arg);
+        return;
+    }
+    
+    char *name = string_duplicate_len(arg, name_length);
+    char *value = string_duplicate_len(first_equal + 1, value_length); 
+    
+    config_t config_entry = {.name = name};
+    
+    if(strcmp(value, "true") == 0){
+        config_entry.type = BOOLEAN;
+        config_entry.value.boolean = true;
+    }else if(strcmp(value, "false") == 0){
+        config_entry.type = BOOLEAN;
+        config_entry.value.boolean = false;
+    }else if(isdigit(value[0])){
+        if(strchr(value, '.') == NULL){
+            config_entry.type = INTEGER;
+            config_entry.value.integer = atoi(value);
         }else{
-            config_entry.type = STRING;
-            config_entry.value.string = value;
-        }
-        core_config_set(config_entry);
-        free(name);
-        free(value);
+            config_entry.type = REAL;
+            config_entry.value.real = atof(value);
+        } 
+    }else{
+        config_entry.type = STRING;
+        config_entry.value.string = value;
+    }
+    core_config_set(config_entry);
+    free(name);
+    free(value);
 }
 
 bool version_valid(version_t version, version_t min, version_t max){
@@ -496,7 +504,7 @@ char **platform_enumerate_directory(char *directory_path, bool directories) {
     struct dirent *entry;
 
     while ( (entry = readdir(directory)) ) {
-        if (directories && entry->d_type != 4) 
+        if (directories && entry->d_type != 4 && strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0) 
             continue;
         if (!directories && entry->d_type != 8)
             continue;
@@ -529,12 +537,16 @@ char **platform_enumerate_directory(char *directory_path, bool directories) {
 }
 
 shared_object_t *platform_library_load(char *path) {
+    shared_object_t *obj = NULL;
     #ifdef UNIX
-        return dlopen(path, RTLD_LAZY);
+        obj = dlopen(path, RTLD_LAZY);
     #elif defined(WINDOWS)
-        return LoadLibrary(path);
+        obj = LoadLibraryExA(path, NULL, DONT_RESOLVE_DLL_REFERENCES);
+        if(obj == NULL){
+            core_log(ERROR, "DLL LoadLibrary error %d", GetLastError());
+        }
     #endif 
-    return NULL;
+    return obj;
 }
 
 function_pointer_t *platform_library_load_symbol(shared_object_t *object, char *name) {
@@ -562,7 +574,7 @@ void platform_library_unload(shared_object_t *object) {
 
 void core_log_(log_category_t category, char *restrict format, ...){
     FILE *output_file = stderr;
-    
+
     switch(category){
         case VERBOSE:fputs("[\033[34mVERBSE\033[0m]", output_file);break;         
         case INFO:   fputs("[\033[34mINFO\033[0m]\t", output_file);break;         
