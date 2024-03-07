@@ -4,6 +4,7 @@
 #include<stdint.h>
 #include<stdbool.h>
 #include<string.h>
+#include<assert.h>
 
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
 #   define WINDOWS
@@ -11,14 +12,15 @@
 #   define UNIX
 #endif
 
-
-
 #ifdef WINDOWS 
 #   define PATH_SEP "\\"
 #   define EXEC_EXT ".exe"
 #   define DYLIB_EXT ".dll"
 #   define WIN32_MEAN_AND_LEAN
 #   include<windows.h>
+#   undef CRITICAL
+#   undef ERROR
+LPSTR GetLastErrorAsString(void);
 #elif defined(UNIX)
 #   define PATH_SEP "/"
 #   define EXEC_EXT ".x86_64"
@@ -54,7 +56,7 @@ typedef struct {
 
 #define list_swap_delete(l, i)((l)[i] = (l)[list_size(l) - 1], list_pop(l))
 
-#define list_join(l1, l2)(l1 = list__join(l1, l2, sizeof(*l1)), assert(sizeof(*(l1))==sizeof(*(l2)))
+#define list_join(l1, l2) (l1 = list__join(l1, l2, sizeof(*l1)), assert(sizeof(*(l1))==sizeof(*(l2)))
 
 #define list_resize(l, s)(l = list__resize(l, sizeof(*(l)), s))
 
@@ -95,10 +97,6 @@ void str_arena_free(string_arena arena){
     }
     list_free(arena);
 }
-
-
-
-
 
 
 typedef enum { DEBUG, VERBOSE, INFO, WARNING, ERROR, CRITICAL } log_category_t;
@@ -150,17 +148,27 @@ bool file1_older_than_file2(char *path1, char *path2){
 #ifdef WINDOWS 
     FILETIME path1_time, path2_time;
 
-    Fd path1_fd = fd_open_for_read(path1);
-    if (!GetFileTime(path1_fd, NULL, NULL, &path1_time)) {
-        PANIC("could not get time of %s: %s", path1, GetLastErrorAsString());
-    }
-    fd_close(path1_fd);
+    SECURITY_ATTRIBUTES saAttr = {0};
+    saAttr.nLength = sizeof(SECURITY_ATTRIBUTES);
+    saAttr.bInheritHandle = TRUE;
 
-    Fd path2_fd = fd_open_for_read(path2);
-    if (!GetFileTime(path2_fd, NULL, NULL, &path2_time)) {
-        PANIC("could not get time of %s: %s", path2, GetLastErrorAsString());
+    HANDLE path1_fd = CreateFile(path1, GENERIC_READ, 0, &saAttr, OPEN_EXISTING, FILE_ATTRIBUTE_READONLY, NULL);
+    if (path1_fd == INVALID_HANDLE_VALUE) {
+        crane_log(CRITICAL, "could not open file %s: %s", path1, GetLastErrorAsString());
     }
-    fd_close(path2_fd);
+    if (!GetFileTime(path1_fd, NULL, NULL, &path1_time)) {
+        crane_log(CRITICAL, "could not get time of %s: %s", path1, GetLastErrorAsString());
+    }
+    CloseHandle(path1);
+
+    HANDLE path2_fd = CreateFile(path1, GENERIC_READ, 0, &saAttr, OPEN_EXISTING, FILE_ATTRIBUTE_READONLY, NULL);
+    if (path2_fd == INVALID_HANDLE_VALUE) {
+        crane_log(CRITICAL, "could not open file %s: %s", path2, GetLastErrorAsString());
+    }
+    if (!GetFileTime(path2_fd, NULL, NULL, &path2_time)) {
+        crane_log(CRITICAL, "could not get time of %s: %s", path2, GetLastErrorAsString());
+    }
+    CloseHandle(path2);
 
     return CompareFileTime(&path1_time, &path2_time) == 1;
 #elif defined(UNIX)
@@ -209,7 +217,7 @@ char  **enumerate_directory(const char *path, bool list_directories){
     closedir(directory);
 
 #elif defined(WINDOWS) //copied directly out of M$ docs
-    char *search_path = string_join(2, directory_path, "\\*");
+    char *search_path = string_join(2, path, "\\*");
     WIN32_FIND_DATA ffd;
     HANDLE hFind = INVALID_HANDLE_VALUE;
 
@@ -217,12 +225,12 @@ char  **enumerate_directory(const char *path, bool list_directories){
     free(search_path);
 
     if (INVALID_HANDLE_VALUE == hFind) {
-        core_log(ERROR, "invalid search handle for path %s", directory_path);    
+        crane_log(ERROR, "invalid search handle for path %s", path);    
         return NULL;
     }
 
     do{
-        if ((bool)(ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == directories){
+        if ((bool)(ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == list_directories){
             list_push(file_list, string_duplicate(ffd.cFileName));
         }
     }while (FindNextFile(hFind, &ffd) != 0);
@@ -254,7 +262,6 @@ char *get_compiler(){
 #endif
 }
 
-
 int compile(char **sources, char *flags, char *output){
     bool should_compile = !file_exists(output);
     
@@ -282,6 +289,10 @@ int compile(char **sources, char *flags, char *output){
 
 void rebuild_(char *file, int argc, char **argv){
     
+    #ifdef WINDOWS
+        return; //not happening i guess
+    #endif
+
     if(argc < 1)
         return;
 
@@ -298,7 +309,6 @@ void rebuild_(char *file, int argc, char **argv){
     }
 }
 
-
 char *string_duplicate(const char *src){
     char *new_buffer = malloc(strlen(src) + 1);
     if(!new_buffer)
@@ -308,7 +318,6 @@ char *string_duplicate(const char *src){
 }
 
 char *string_duplicate_len(const char *src, size_t len){
-
     size_t string_size = strlen(src);
     size_t new_length = len < string_size ? len : string_size;
 
@@ -318,7 +327,6 @@ char *string_duplicate_len(const char *src, size_t len){
         result[new_length] = 0;
     }
     return result;
-
 }
 
 
@@ -431,7 +439,6 @@ char *string_from_list(char **list, char separator){
     
     char *final_string = malloc(total_size +  1);
 
-    
     for(size_t i = 0; i < list_size(list); i++){
         strcat(final_string, list[i]); 
         if(separator && i < list_size(list) -1)
@@ -449,7 +456,7 @@ void crane_log_(const char *restrict file, size_t line, const char *restrict fun
         case INFO:   fputs("[\033[34mINFO\033[0m]\t", output_file);break;         
         case WARNING:fputs("[\033[93mWARN\033[0m]\t", output_file);break;
         case ERROR:  fputs("[\033[31mERROR\033[0m]\t", output_file);break;
-        case CRITICAL:fputs("[\033[31mCRITICAL\033[0m]\t", output_file);break;
+        case CRITICAL:fputs("[\033[31mCRTCAL\033[0m]", output_file);break;
         case DEBUG:  fputs("[\033[35mDEBUG\033[0m]\t", output_file);break;
     }
 
@@ -461,3 +468,26 @@ void crane_log_(const char *restrict file, size_t line, const char *restrict fun
     va_end(args);
     fputs("\n", output_file);
 }
+#ifdef WINDOWS 
+LPSTR GetLastErrorAsString(void){
+    // https://stackoverflow.com/questions/1387064/how-to-get-the-error-message-from-the-error-code-returned-by-getlasterror
+
+    DWORD errorMessageId = GetLastError();
+    assert(errorMessageId != 0);
+
+    LPSTR messageBuffer = NULL;
+
+    DWORD size =
+        FormatMessage(
+            FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, // DWORD   dwFlags,
+            NULL, // LPCVOID lpSource,
+            errorMessageId, // DWORD   dwMessageId,
+            MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), // DWORD   dwLanguageId,
+            (LPSTR) &messageBuffer, // LPTSTR  lpBuffer,
+            0, // DWORD   nSize,
+            NULL // va_list *Arguments
+        );
+
+    return messageBuffer;
+}
+#endif
