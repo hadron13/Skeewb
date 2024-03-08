@@ -6,6 +6,11 @@
 #include<string.h>
 
 
+#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
+#   define WINDOWS
+#elif defined(__unix__) || defined(__unix)
+#   define UNIX
+#endif
 
 #ifdef WINDOWS 
 #   define PATH_SEP "\\"
@@ -77,7 +82,6 @@ void *list__join(void *list1, void *list2, size_t element_size){
     return list1;
 }
 
-
 typedef struct{
     size_t size;
     char *cstring;
@@ -90,8 +94,8 @@ typedef struct{
 
 typedef string_t* string_arena_t;
 
-string_t str_arena_add(string_arena_t arena, string_t str){
-    list_push(arena, str);
+string_t str_arena_add(string_arena_t *arena, string_t str){
+    list_push(*arena, str);
     return str;
 }
 
@@ -102,6 +106,10 @@ void str_arena_free(string_arena_t arena){
     list_free(arena);
 }
 
+#define str_arena_join(arena, ...)(str_arena_add(arena, string_join(__VA_ARGS__)))
+#define str_arena_join_sep(arena, separator, ...)(str_arena_add(arena, string_join_sep(separator, __VA_ARGS__)))
+#define str_arena_path(arena, ...)(str_arena_add(arena, string_path(__VA_ARGS__)))
+
 
 typedef enum { DEBUG, VERBOSE, INFO, WARNING, ERROR, CRITICAL } log_category_t;
 
@@ -111,28 +119,31 @@ string_t string_no_ext(string_t filename);
 string_t string_get_ext(string_t filename);
 
 string_t string_join_(unsigned int separator, ...);
+string_t string_join_varargs(char separator, va_list args);
 #define string_join(...)(string_join_(0, __VA_ARGS__, str_null))
 #define string_join_sep(separator, ...)(string_join_(separator, __VA_ARGS__, str_null))
-#define string_path(...)(string_join_(PATH_SEPARATOR, __VA_ARGS__, str_null))
+#define string_path(...)(string_join_((PATH_SEP)[0], __VA_ARGS__, str_null))
 
+
+string_t cstring_path_(char *root, ...);
+#define path(...)(cstring_path_(__VA_ARGS__, NULL))
+#define arena_path(arena, ...)(str_arena_add(arena, cstring_path_(__VA_ARGS__, NULL)))
 
 string_t *enumerate_directory(string_t path, bool list_directories);
 bool     make_directory(string_t name);
 bool     file_exists(string_t filename);
-bool     is_file_older_than(string_t file1, string_t file2);
-char    *get_compiler();
+bool     is_file_older_than(string_t path1, string_t path2);
+string_t get_compiler();
 
 int compile_(string_t output, string_t flags, ...);
-#define compile(output, flags, ...) (compile_(output, flags, __VA_ARGS__, NULL))
+#define compile(output, flags, ...) (compile_(output, flags, __VA_ARGS__, str_null))
 
-void rebuild_(char *source, int argc, char **argv);
+int rebuild_(char *source, int argc, char **argv);
 #define rebuild(argc, argv)(rebuild_(__FILE__, argc, argv))
-
-
-
 
 void crane_log_(const char *restrict file, size_t line, const char *restrict function, log_category_t category, char *restrict format, ...);
 #define crane_log(category, ...) crane_log_(__FILE__, __LINE__, __func__, category,  __VA_ARGS__);
+
 
 string_t string_duplicate(string_t string){
     string_t new_string = {.size = string.size, .cstring = malloc(string.size) + 1};
@@ -166,36 +177,78 @@ string_t string_join_(unsigned int separator, ...){
     va_list args; 
     va_start(args, separator); 
 
-    size_t total_size = 0;
-    size_t total_strings = 0;
-    char separator_char = (char)separator;
+    return string_join_varargs((char)separator, args);
+}
+
+string_t string_join_varargs(char separator, va_list args){
+    va_list args_copy;
+    va_copy(args_copy, args);
+    
+    size_t total_size = 0, total_strings = 0;
+    
     string_t current_string = va_arg(args, string_t);
 
     while(current_string.size > 0){
         total_size += current_string.size;
-        if(separator_char)
+        if(separator)
             total_size++;
         total_strings++;
         current_string = va_arg(args, string_t);
     }
-    if(separator_char)
+    if(separator)
         total_size--;
 
     va_end(args);
     
     string_t joined_string = str_alloc(total_size);
-
-    va_start(args, separator);
-    current_string = va_arg(args, string_t);
+    joined_string.cstring[0] = 0;
     
-    for(size_t i = 0; i < total_strings; i++){
-        strcat(joined_string.cstring, current_string.cstring);
-        if(separator_char && i + 1 < total_strings)
-            strcat(joined_string.cstring, &separator_char);
-        
-        current_string = va_arg(args, string_t);
-    }
+    for(size_t current_character = 0; current_character < total_size;){
+        string_t current_string = va_arg(args_copy, string_t);
 
+        current_character += current_string.size;
+        strcat(joined_string.cstring, current_string.cstring);
+
+        if(separator && current_character < total_size - 1){
+            joined_string.cstring[current_character] = separator;
+            current_character++;
+        } 
+    }
+    va_end(args_copy);
+    return joined_string;
+}
+
+string_t cstring_path_(char *root, ...){
+    va_list args;
+    va_start(args, root);
+    size_t total_size = 0, total_strings = 0;
+    
+    char *current_string = root;
+
+    while(current_string != NULL){
+        total_size += strlen(current_string) + 1;
+        total_strings++;
+        current_string = va_arg(args, char *);
+    }
+    total_size--;
+    va_end(args);
+    va_start(args, root);
+    
+    string_t joined_string = str_alloc(total_size);
+    joined_string.cstring[0] = 0;
+
+    current_string = root; 
+    for(size_t current_character = 0; current_character < total_size;){
+
+        current_character += strlen(current_string);
+        strcat(joined_string.cstring, current_string);
+
+        if(current_character < total_size - 1){
+            joined_string.cstring[current_character] = PATH_SEP[0];
+            current_character++;
+        } 
+        current_string = va_arg(args, char*);
+    }
     va_end(args);
     return joined_string;
 }
@@ -210,7 +263,7 @@ string_t *enumerate_directory(string_t path, bool list_directories){
     DIR *directory = opendir(path.cstring);
 
     if (!directory){
-        crane_log(ERROR, "invalid search handle for path %s", path.cstr);    
+        crane_log(ERROR, "invalid search handle for path %s", path.cstring);    
         return NULL;
     }
     struct dirent *entry;
@@ -261,6 +314,7 @@ bool make_directory(string_t name){
 #   elif defined(WINDOWS)
     if (!CreateDirectoryA(name.cstring, NULL)) {
         crane_log(CRITICAL, "could not create directory %s: %s", name, GetLastErrorAsString());
+        return false;
     }
 #endif 
     return true;
@@ -276,32 +330,59 @@ bool file_exists(string_t filename){
     return true;
 }
 
-
-
 int compile_(string_t output, string_t flags, ...){
-    
     va_list args;
     va_start(args, flags);
     
-    string_t current_source = va_arg(args, string_t);
-    while(current_source.size > 0){
-        
+    bool should_compile = !file_exists(output);
 
+    for(string_t source_file = va_arg(args, string_t); !should_compile && source_file.size > 0;){
+        
+        if(is_file_older_than(output, source_file)){
+            should_compile = true;
+        }
+        source_file = va_arg(args, string_t);
     }
 
+    if(!should_compile)
+        return 0;
+
+    va_end(args);
+    va_start(args, flags);
 
 
+    string_t sources = string_join_varargs(' ', args);
+    string_t command = string_join_sep(' ', get_compiler(), str("-o"), output, flags, sources);
 
+    crane_log(VERBOSE, "%s", command.cstring)
+    int status = system(command.cstring);
+    
+    str_free(sources);
+    str_free(command);
 
-
-    return 0;
+    return status;
 }
 
+int rebuild_(char *source, int argc, char **argv){
+    
+#   ifdef WINDOWS 
+    return;
+#   elif defined(UNIX)
+    string_t executable = str(argv[0]);
+    string_t source_file = str(source);
+
+    if(is_file_older_than(executable, source_file)){
+        crane_log(INFO, "rebuilding...");
+        compile(executable, str("-g"), source_file);
+        return system(executable.cstring);
+    }
+#endif
 
 
 
+}
 
-bool is_file_older_than(string_t file1, string_t file2){
+bool is_file_older_than(string_t path1, string_t path2){
 #ifdef WINDOWS 
     FILETIME path1_time, path2_time;
 
@@ -309,54 +390,54 @@ bool is_file_older_than(string_t file1, string_t file2){
     saAttr.nLength = sizeof(SECURITY_ATTRIBUTES);
     saAttr.bInheritHandle = TRUE;
 
-    HANDLE path1_fd = CreateFile(path1, GENERIC_READ, FILE_SHARE_READ, &saAttr, OPEN_EXISTING, FILE_ATTRIBUTE_READONLY, NULL);
+    HANDLE path1_fd = CreateFile(path1.cstring, GENERIC_READ, FILE_SHARE_READ, &saAttr, OPEN_EXISTING, FILE_ATTRIBUTE_READONLY, NULL);
     if (path1_fd == INVALID_HANDLE_VALUE) {
-        crane_log(CRITICAL, "could not open file %s: %s", path1, GetLastErrorAsString());
+        crane_log(CRITICAL, "could not open file %s: %s", path1.cstring, GetLastErrorAsString());
     }
     if (!GetFileTime(path1_fd, NULL, NULL, &path1_time)) {
-        crane_log(CRITICAL, "could not get time of %s: %s", path1, GetLastErrorAsString());
+        crane_log(CRITICAL, "could not get time of %s: %s", path1.cstring, GetLastErrorAsString());
     }
-    CloseHandle(path1);
+    CloseHandle(path1_fd);
 
-    HANDLE path2_fd = CreateFile(path1, GENERIC_READ, FILE_SHARE_READ, &saAttr, OPEN_EXISTING, FILE_ATTRIBUTE_READONLY, NULL);
+    HANDLE path2_fd = CreateFile(path1.cstring, GENERIC_READ, FILE_SHARE_READ, &saAttr, OPEN_EXISTING, FILE_ATTRIBUTE_READONLY, NULL);
     if (path2_fd == INVALID_HANDLE_VALUE) {
-        crane_log(CRITICAL, "could not open file %s: %s", path2, GetLastErrorAsString());
+        crane_log(CRITICAL, "could not open file %s: %s", path2.cstring, GetLastErrorAsString());
     }
     if (!GetFileTime(path2_fd, NULL, NULL, &path2_time)) {
-        crane_log(CRITICAL, "could not get time of %s: %s", path2, GetLastErrorAsString());
+        crane_log(CRITICAL, "could not get time of %s: %s", path2.cstring, GetLastErrorAsString());
     }
-    CloseHandle(path2);
+    CloseHandle(path2_fd);
 
     return CompareFileTime(&path1_time, &path2_time) == 1;
 #elif defined(UNIX)
     struct stat statbuf = {0};
 
     if (stat(path1.cstring, &statbuf) < 0) {
-        crane_log(CRITICAL, "could not stat %s: %s\n", path1, strerror(errno));
+        crane_log(CRITICAL, "could not stat %s: %s\n", path1.cstring, strerror(errno));
     }
     int path1_time = statbuf.st_mtime;
 
     if (stat(path2.cstring, &statbuf) < 0) {
-        crane_log(CRITICAL, "could not stat %s: %s\n", path2, strerror(errno));
+        crane_log(CRITICAL, "could not stat %s: %s\n", path2.cstring, strerror(errno));
     }
     int path2_time = statbuf.st_mtime;
 
-    return path1_time > path2_time;
+    return path1_time < path2_time;
 #endif
     return false;
 }
 
 
-char *get_compiler(){
+string_t get_compiler(){
     char *compiler_env = getenv("cc");
     if(compiler_env)
-        return compiler_env;
+        return str(compiler_env);
 #if defined(__GNUC__) && !defined(__clang__)
-    return "gcc";
+    return str("gcc");
 #elif defined(__clang__)
-    return "clang";
+    return str("clang");
 #elif defined(_MSC_VER)
-    return "cl.exe";
+    return str("cl.exe");
 #endif
 }
 
