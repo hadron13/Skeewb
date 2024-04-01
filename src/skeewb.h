@@ -17,10 +17,10 @@
  *  FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-
-#pragma once 
-#include<stdint.h>
-#include<stdbool.h>
+#ifndef SKEEWB_H
+#define SKEEWB_H
+#include <stdint.h>
+#include <stdbool.h>
 
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
 #define WINDOWS
@@ -28,12 +28,7 @@
 #define UNIX
 #endif
 
-#ifdef UNIX
 
-#endif
-#ifdef WINDOWS
-
-#endif
 
 /*
  *  ======== \\    // ||===\\  ||==== //===\\ 
@@ -47,8 +42,14 @@
 typedef void shared_object_t;
 typedef void function_pointer_t;
 typedef void interface_t;
+
+#ifndef CORE
 typedef void module_t;
 typedef void event_t;
+#endif
+
+#include "ds.h"
+
 
 typedef void(*event_callback_t)(void *context);
 
@@ -63,20 +64,22 @@ typedef struct{
 }version_t;
 
 typedef struct{
-    char *modid;
-    version_t version;
+    string_t     modid;
+    version_t    version;
     interface_t *interface;
 }module_desc_t;
 
+typedef union{
+    bool      boolean;
+    int64_t  integer;
+    double   real;
+    string_t string;
+}config_value_t;
+
 typedef struct{
-    char *name;
+    string_t name;
     config_type_t type;
-    union{
-        bool boolean;
-        int64_t integer;
-        double real;
-        char *string;
-    }value;
+    config_value_t value;
 }config_t;
 
 typedef struct{
@@ -85,15 +88,12 @@ typedef struct{
         void (*_log_)(log_category_t category, char *restrict format, ...);         //use this one to override the log function
         void (*console_log)(log_category_t category, char *restrict format, ...);   //for LSP enjoyement
     };
-    void         (*event_register)(const char *name);
-    void         (*event_trigger) (const char *name, void *context);
-    void         (*event_listen)  (const char *name, event_callback_t callback);
+    void         (*event_register)(const string_t name);
+    void         (*event_trigger) (const string_t name, void *context);
+    void         (*event_listen)  (const string_t name, event_callback_t callback);
     void         (*quit)(int status);
     void         (*config_set)(config_t config);
-    config_t     (*config_get)(const char *name);
-    void         (*require_version)(const char *modid, version_t min_version, version_t max_version);
-    void         (*require)(const char *modid);
-    interface_t* (*module_get_interface)(const char *modid);
+    config_t     (*config_get)(const string_t name);
 }core_interface_t;
 
 
@@ -101,7 +101,8 @@ typedef struct{
     #define MODULE ""
 #endif
 
-
 #define console_log(cat, fmt, ...) console_log(cat, "[\033[34m" MODULE" |"__FILE__ ":\033[35m%d \033[93m%s()\033[0m] "fmt, __LINE__, __func__ __VA_OPT__(,) __VA_ARGS__)
 
 module_desc_t load(core_interface_t *core);
+
+#endif

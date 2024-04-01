@@ -4,6 +4,8 @@
 #include<stdio.h>
 #include<stdlib.h>
 #include<string.h>
+#include<stdlib.h>
+#include<assert.h>
 
 
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
@@ -16,6 +18,7 @@
 #   define PATH_SEP "\\"
 #   define EXEC_EXT ".exe"
 #   define DYLIB_EXT ".dll"
+#   define SILENCE " > nul "
 #   define WIN32_MEAN_AND_LEAN
 #   include<windows.h>
 #   undef CRITICAL
@@ -25,12 +28,14 @@ LPSTR GetLastErrorAsString(void);
 #   define PATH_SEP "/"
 #   define EXEC_EXT ".x86_64"
 #   define DYLIB_EXT ".so"
+#   define SILENCE " > /dev/null "
 #   include<dirent.h>
 #   include<unistd.h>
 #   include<sys/stat.h>
 #   include<errno.h>
 #endif
 
+#define S PATH_SEP
 
 typedef struct {
     size_t size, capacity;
@@ -54,7 +59,7 @@ typedef struct {
 
 #define list_swap_delete(l, i)((l)[i] = (l)[list_size(l) - 1], list_pop(l))
 
-#define list_join(l1, l2) (l1 = list__join(l1, l2, sizeof(*l1)), assert(sizeof(*(l1))==sizeof(*(l2)))
+#define list_join(l1, l2) (l1 = list__join(l1, l2, sizeof(*l1)), assert(sizeof(*(l1))==sizeof(*(l2))) )
 
 #define list_resize(l, s)(l = list__resize(l, sizeof(*(l)), s))
 
@@ -132,6 +137,7 @@ string_t cstring_path_(char *root, ...);
 string_t *enumerate_directory(string_t path, bool list_directories);
 bool     make_directory(string_t name);
 bool     file_exists(string_t filename);
+bool     move(string_t old_path, string_t new_path);
 bool     is_file_older_than(string_t path1, string_t path2);
 string_t get_compiler();
 
@@ -146,10 +152,11 @@ void crane_log_(const char *restrict file, size_t line, const char *restrict fun
 
 
 string_t string_duplicate(string_t string){
-    string_t new_string = {.size = string.size, .cstring = malloc(string.size) + 1};
+    string_t new_string = {.size = string.size, .cstring = malloc(string.size + 1) };
     memcpy(new_string.cstring, string.cstring, string.size + 1);
     return new_string;
 }
+
 string_t string_duplicate_len(string_t string, size_t length){
     size_t final_length =  string.size < length? string.size : length;
     string_t new_string = {.size = final_length, .cstring = malloc(final_length + 1)};
@@ -184,7 +191,7 @@ string_t string_join_varargs(char separator, va_list args){
     va_list args_copy;
     va_copy(args_copy, args);
     
-    size_t total_size = 0, total_strings = 0;
+    size_t total_size = 0;
     
     string_t current_string = va_arg(args, string_t);
 
@@ -192,7 +199,6 @@ string_t string_join_varargs(char separator, va_list args){
         total_size += current_string.size;
         if(separator)
             total_size++;
-        total_strings++;
         current_string = va_arg(args, string_t);
     }
     if(separator)
@@ -201,19 +207,20 @@ string_t string_join_varargs(char separator, va_list args){
     va_end(args);
     
     string_t joined_string = str_alloc(total_size);
-    joined_string.cstring[0] = 0;
     
     for(size_t current_character = 0; current_character < total_size;){
-        string_t current_string = va_arg(args_copy, string_t);
-
-        current_character += current_string.size;
-        strcat(joined_string.cstring, current_string.cstring);
-
-        if(separator && current_character < total_size - 1){
+        if(separator && current_character != 0){
             joined_string.cstring[current_character] = separator;
             current_character++;
-        } 
+        }
+
+        string_t current_string = va_arg(args_copy, string_t);
+
+        memcpy(joined_string.cstring + current_character, current_string.cstring, current_string.size);
+        current_character += current_string.size;
     }
+    joined_string.cstring[total_size] = 0;
+
     va_end(args_copy);
     return joined_string;
 }
@@ -283,7 +290,7 @@ string_t *enumerate_directory(string_t path, bool list_directories){
     WIN32_FIND_DATA ffd;
     HANDLE hFind = INVALID_HANDLE_VALUE;
 
-    hFind = FindFirstFile(search_path, &ffd);
+    hFind = FindFirstFile(search_path.cstring, &ffd);
     str_free(search_path);
 
     if (INVALID_HANDLE_VALUE == hFind) {
@@ -302,6 +309,7 @@ string_t *enumerate_directory(string_t path, bool list_directories){
 }
 
 bool make_directory(string_t name){ 
+    crane_log(INFO, "creating directory %s", name.cstring);
 #   ifdef UNIX
         if (mkdir(name.cstring, 0755) < 0) {
             if (errno == EEXIST) {
@@ -313,7 +321,7 @@ bool make_directory(string_t name){
         }
 #   elif defined(WINDOWS)
     if (!CreateDirectoryA(name.cstring, NULL)) {
-        crane_log(CRITICAL, "could not create directory %s: %s", name, GetLastErrorAsString());
+        //crane_log(WARNING, "could not create directory %s: %s", name, GetLastErrorAsString());
         return false;
     }
 #endif 
@@ -329,6 +337,20 @@ bool file_exists(string_t filename){
     fclose(file);
     return true;
 }
+
+
+bool move(string_t old_path, string_t new_path){
+    #ifdef UNIX
+    int status = rename(old_path.cstring, new_path.cstring);
+    if(status){
+        crane_log(ERROR, "%s", strerror(errno));
+    }
+    return status;
+    #elif defined(WINDOWS)
+    
+    #endif
+}
+
 
 int compile_(string_t output, string_t flags, ...){
     va_list args;
@@ -350,9 +372,10 @@ int compile_(string_t output, string_t flags, ...){
     va_end(args);
     va_start(args, flags);
 
+    string_t dash_o = str("-o");
 
     string_t sources = string_join_varargs(' ', args);
-    string_t command = string_join_sep(' ', get_compiler(), str("-o"), output, flags, sources);
+    string_t command = string_join_sep(' ', get_compiler(), sources, flags, str("-o"), output);
 
     crane_log(VERBOSE, "%s", command.cstring)
     int status = system(command.cstring);
@@ -360,13 +383,17 @@ int compile_(string_t output, string_t flags, ...){
     str_free(sources);
     str_free(command);
 
+    if(status){
+        crane_log(ERROR, "compiled with code %d", status);
+    }
+
     return status;
 }
 
 int rebuild_(char *source, int argc, char **argv){
     
 #   ifdef WINDOWS 
-    return;
+    return 0;
 #   elif defined(UNIX)
     string_t executable = str(argv[0]);
     string_t source_file = str(source);
@@ -374,11 +401,11 @@ int rebuild_(char *source, int argc, char **argv){
     if(is_file_older_than(executable, source_file)){
         crane_log(INFO, "rebuilding...");
         compile(executable, str("-g"), source_file);
-        return system(executable.cstring);
+        system(executable.cstring);
+        exit(0);
     }
+    return 0;
 #endif
-
-
 
 }
 
@@ -399,7 +426,7 @@ bool is_file_older_than(string_t path1, string_t path2){
     }
     CloseHandle(path1_fd);
 
-    HANDLE path2_fd = CreateFile(path1.cstring, GENERIC_READ, FILE_SHARE_READ, &saAttr, OPEN_EXISTING, FILE_ATTRIBUTE_READONLY, NULL);
+    HANDLE path2_fd = CreateFile(path2.cstring, GENERIC_READ, FILE_SHARE_READ, &saAttr, OPEN_EXISTING, FILE_ATTRIBUTE_READONLY, NULL);
     if (path2_fd == INVALID_HANDLE_VALUE) {
         crane_log(CRITICAL, "could not open file %s: %s", path2.cstring, GetLastErrorAsString());
     }
@@ -408,7 +435,7 @@ bool is_file_older_than(string_t path1, string_t path2){
     }
     CloseHandle(path2_fd);
 
-    return CompareFileTime(&path1_time, &path2_time) == 1;
+    return CompareFileTime(&path1_time, &path2_time) == -1;
 #elif defined(UNIX)
     struct stat statbuf = {0};
 

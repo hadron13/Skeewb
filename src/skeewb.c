@@ -5,20 +5,19 @@
 #include <string.h>
 #include <stdarg.h>
 #include <ctype.h>
-
-
 // #include <threads.h>
 
 // pentagon, hexagon, MSVC's gon
 //#include<pthread.h>
 
 #define MODULE "Core"
+#define CORE
 
-#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
-#define WINDOWS
-#elif defined(__unix__) || defined(__unix)
-#define UNIX
-#endif
+
+#define ICE_CPU_IMPL
+#include "ice_cpu.h"
+#include "ds.h"
+#include "skeewb.h"
 
 #ifdef UNIX
 #define PATH_SEPARATOR '/'
@@ -44,10 +43,6 @@
 #endif
 
 
-#define ICE_CPU_IMPL
-#include "libs/ice_cpu.h"
-#include "libs/ds.h"
-
 /*
  *  ======== \\    // ||===\\  ||==== //===\\ 
  *     ||     \\  //  ||    || ||     ||      
@@ -56,52 +51,19 @@
  *     ||       ||    ||       ||==== \\===// 
  */
 
-typedef void shared_object_t;
-typedef void function_pointer_t;
-typedef void interface_t;
-
-typedef void(*event_callback_t)(void *context);
-
-typedef enum { DEBUG, VERBOSE, INFO, WARNING, ERROR, CRITICAL } log_category_t;
-
-typedef enum { EMPTY, BOOLEAN, INTEGER, REAL, STRING } config_type_t;
 
 typedef struct{
-    char *name;
-    config_type_t type;
-    union{
-        bool boolean;
-        int64_t integer;
-        double real;
-        char *string;
-    }value;
-}config_t;
-
-
-typedef struct{
-    uint16_t major;
-    uint16_t minor;
-    uint16_t patch;
-}version_t;
-
-typedef struct{
-    char             *name;
+    string_t          name;
     event_callback_t *callbacks;
 }event_t;
 
 typedef struct{
-    char            *name;
+    string_t         name;
     version_t        version;
-    char            *path;
+    string_t         path;
     shared_object_t *shared_object;
     interface_t     *interface;
 }module_t;
-
-typedef struct{
-    char *modid;
-    version_t version;
-    interface_t *interface;
-}module_desc_t;
 
 typedef struct{
     char *dependent;
@@ -110,24 +72,8 @@ typedef struct{
     version_t max;
 }module_requirement_t;
 
-typedef struct{
-    version_t version;
-    void         (*log_)(log_category_t category, char *restrict format, ...);
-    void         (*event_register)(const char *name);
-    void         (*event_trigger)(const char *name, void *context);
-    void         (*event_listen)(const char *name, event_callback_t callback);
-    void         (*quit)(int status);
-    void         (*config_set)(config_t config);
-    config_t     (*config_get)(const char *name);
-    void         (*require_version)(const char *modid, version_t min_version, version_t max_version);
-    void         (*require)(const char *modid);
-    interface_t* (*module_get_interface)(const char *modid);
-}core_interface_t;
-
 
 typedef module_desc_t(*start_func_t)(core_interface_t *interface);
-
-
 
 /*
  * ====== ||    || ||\  ||  //===\\ ======== ======  //===\\  ||\  ||  //===\\ 
@@ -137,35 +83,40 @@ typedef module_desc_t(*start_func_t)(core_interface_t *interface);
  * ||      \\==//  ||   ||  \\===//    ||    ======  \\===//  ||   \|  \\===//
  */
 
-void core_event_register(const char *name);
-void core_event_trigger (const char *name, void *context);
-void core_event_listen  (const char *name, event_callback_t callback);
+//  ====== EVENTS ====== 
+void     core_event_register(const string_t name);
+void     core_event_trigger (const string_t name, void *context);
+void     core_event_listen  (const string_t name, event_callback_t callback);
 
+//  ====== CONFIGS =====
 void     core_config_set(config_t config);
-config_t core_config_get(const char *name);
+config_t core_config_get(const string_t name);
 
-void core_require_version(const char *modid, version_t min_version, version_t max_version);
-void core_require(const char *modid);
+//  ====== MODULES =====
 
-interface_t* core_module_get_interface(const char *modid);
-void         core_module_reload(const char *modid);
 
-void core_quit(int status);
-
+//  ===== LOGGING ======
 void core_log_(log_category_t category, char *restrict format, ...);
 #define core_log(category, format, ...) core_log_(category, "[\033[34m" MODULE" |"__FILE__ ":\033[35m%d \033[93m%s()\033[0m] "format, __LINE__, __func__ __VA_OPT__(,) __VA_ARGS__)
 
 
-void parse_argument(char *arg);
-bool version_valid(version_t version, version_t min, version_t max);
+//  ======= MISC =======
+void    parse_argument(char *arg);
+bool    version_valid(version_t version, version_t min, version_t max);
+char   *core_get_cwd();
 
-char                **platform_enumerate_directory(char *directory_path, bool directories); // returns dynamic array of strings
-shared_object_t      *platform_library_load(char *path);
-function_pointer_t   *platform_library_load_symbol(shared_object_t *object, char *name);
+
+//  ===== PLATFORM =====
+string_t             *platform_enumerate_directory(string_t directory_path, bool directories); // returns dynamic array of strings
+shared_object_t      *platform_library_load(string_t path);
+function_pointer_t   *platform_library_load_symbol(shared_object_t *object, string_t name);
 void                  platform_library_unload(shared_object_t *object);
+void                  platform_print_error();
 
 
+//  ===== LIFETIME =====
 void cleanup(void);
+void core_quit(int status);
 
 /*
  *  //===\\  ||      //===\\  ||==\\     /\     ||      //===\\ 
@@ -177,16 +128,13 @@ void cleanup(void);
 
 core_interface_t core_interface = {
     {0, 0, 1},
-    .log_ = core_log_,
+    ._log_ = core_log_,
     .event_register = core_event_register,
     .event_trigger = core_event_trigger,
     .event_listen = core_event_listen,
     .quit = core_quit,
     .config_set = core_config_set,
     .config_get = core_config_get,
-    .require_version = core_require_version,
-    .require = core_require,
-    .module_get_interface = core_module_get_interface,
 };
 
 
@@ -210,7 +158,6 @@ config_t *configs;
  */
 
 int main(int argc, char **argv) {
-
     atexit(cleanup);
 
     modules = list_init(module_t);
@@ -221,14 +168,19 @@ int main(int argc, char **argv) {
     config_hashtable = str_hash_create(8);
 
     core_log(INFO, "starting");
+    
 
     FILE *config_file = fopen("config.txt", "r");
     if(!config_file){
         core_log(INFO, "reading config file");
         // TODO: read config file
-        
-
     }
+
+    #ifdef WINDOWS
+    if(SetDllDirectoryA("D:\\Skeewb\\build\\mods\\libs") == 0){
+        core_log(ERROR, "could not add dll directory with error %i", GetLastError());
+    }
+    #endif
 
 
     if(argc > 1){
@@ -248,63 +200,59 @@ int main(int argc, char **argv) {
     ice_cpu_get_info(&cpu_info);
     core_log(INFO, "CPU: %s", cpu_info.name);
     core_log(INFO, "%d cores", cpu_info.cores);
+    
     core_config_set((config_t){
-        .name = "cpu_cores",
+        .name = str("cpu_cores"),
         .type = INTEGER,
         .value = cpu_info.cores,
     }); 
+    
+    core_event_register(str("start"));
+    core_event_register(str("loop"));
+    core_event_register(str("quit"));
 
-    char *path = string_path(argv[0]); 
-    char *mod_directory_path = string_join(2, path, "mods");
-    free(path);
+    string_temp_t temp = list_init(string_t);
+    string_t cwd = str_temp(&temp, string_get_path(str(argv[0])));
 
-    char **mod_names = platform_enumerate_directory(mod_directory_path, false); 
-
-    core_event_register("start");
-    core_event_register("loop");
-    core_event_register("quit");
-
-    core_log(INFO, "mod directory: %s", mod_directory_path);
+    string_t mod_directory = str_temp(&temp, string_path( cwd, str("mods")));
+    
+    core_log(INFO, "mod directory: %s", mod_directory.cstr);
+    string_t *mod_names = platform_enumerate_directory(mod_directory, false); 
+    
     for(size_t i = 0; i < list_size(mod_names); i++){
-        char *mod_filename = mod_names[i];
-        char *mod_path = string_join(3, mod_directory_path, PATH_SEPARATOR_STR, mod_filename);
+        string_t mod_path = str_temp(&temp, string_path(mod_directory, mod_names[i]));
 
-        if(strcmp(string_extension(mod_filename), DYLIB_EXTENSION) != 0){
-            free(mod_path);
+        if(!string_equal(str_temp(&temp, string_get_ext(mod_path)), str(DYLIB_EXTENSION)))
             continue;
-        }
+        
 
-        core_log(INFO, "loading %s", mod_filename);
+        core_log(INFO, "loading %s", mod_names[i].cstr);
         shared_object_t *mod_so = platform_library_load(mod_path);
-        free(mod_path);
 
         if(!mod_so){
-            core_log(ERROR, "could not load %s", mod_filename);
-            free(mod_filename);
+            core_log(ERROR, "could not load %s", mod_names[i].cstr);
             continue;
         }
-        start_func_t start = (start_func_t)platform_library_load_symbol(mod_so, "load");
+        start_func_t start = (start_func_t)platform_library_load_symbol(mod_so, str("load"));
         if(!start)
             continue;
 
         module_desc_t descriptor = start(&core_interface);
 
-        module_t module_entry = {
-            .name = string_duplicate(descriptor.modid),
+        list_push(modules, ((module_t){
+            .name = string_dup(descriptor.modid),
             .version = descriptor.version,
             .interface = descriptor.interface,
             .shared_object = mod_so, 
-        };
-        list_push(modules, module_entry);
+        }));
     }     
     
     list_free(mod_names);
-    free(mod_directory_path);
+    str_temp_free(temp);
 
-
-    core_event_trigger("start", &core_interface);
+    core_event_trigger(str("start"), &core_interface);
     while(1){
-        core_event_trigger("loop", &core_interface);
+        core_event_trigger(str("loop"), &core_interface);
     }
 
     return 0;
@@ -312,55 +260,61 @@ int main(int argc, char **argv) {
 
 void cleanup(void){
     for(size_t i = 0; i < list_size(modules); i++){
-        free(modules[i].name);
+        str_free(modules[i].name);
         platform_library_unload(modules[i].shared_object);
     }
-    list_free(modules);
-    str_hash_destroy(&module_hashtable);
 
     for(size_t i = 0; i < list_size(events); i++){
-        free(events[i].name);
+        str_free(events[i].name);
         list_free(events[i].callbacks);
     }
-    list_free(events);
-    str_hash_destroy(&event_hashtable);
+    
     for(size_t i = 0; i < list_size(configs); i++){
-        free(configs[i].name);
+        str_free(configs[i].name);
         if(configs[i].type == STRING)
-            free(configs[i].value.string);
+            str_free(configs[i].value.string);
     }
+    list_free(modules);
+    list_free(events);
     list_free(configs);
+    
+    str_hash_destroy(&module_hashtable);
+    str_hash_destroy(&event_hashtable);
 }
 
 void core_quit(int status){
     core_log(INFO, "quitting with status %d...", status);
-    core_event_trigger("quit", &core_interface);
+    core_event_trigger(str("quit"), &core_interface);
     exit(status);
 }
 
 // ===== ===== Events ===== =====
 
-void core_event_register(const char* name){
+void core_event_register(const string_t name){
     event_t event = {
-        string_duplicate(name),
+        string_dup(name),
         list_init(event_callback_t)
     };
     list_push(events, event);
-    str_hash_insert(&event_hashtable, event.name, list_size(events) - 1);
+    str_hash_insert(&event_hashtable, event.name.cstr, list_size(events) - 1);
 }
 
-void core_event_trigger (const char *name, void *context){
-    size_t index = str_hash_lookup(&event_hashtable, name);
+void core_event_trigger (const string_t name, void *context){
+    size_t index = str_hash_lookup(&event_hashtable, name.cstr);
+    if(index == STR_HASH_MISSING){
+        core_log(WARNING, "unknown event: %s", name.cstr);
+        return;
+    }
     for(size_t i = 0; i < list_size(events[index].callbacks); i++){
         events[index].callbacks[i](context);
     }
 }
 
-void core_event_listen(const char *name, event_callback_t callback){
-    size_t index = str_hash_lookup(&event_hashtable, name);
+void core_event_listen(const string_t name, event_callback_t callback){
+    size_t index = str_hash_lookup(&event_hashtable, name.cstr);
 
-    if(index == UINT64_MAX){
-        core_log(WARNING, "unknown event: %s", name);
+    if(index == STR_HASH_MISSING){
+        core_log(WARNING, "unknown event: %s", name.cstr);
         return;
     }
     list_push(events[index].callbacks, callback);
@@ -370,61 +324,44 @@ void core_event_listen(const char *name, event_callback_t callback){
 
 void core_config_set(config_t config){
 
-    size_t index = str_hash_lookup(&config_hashtable, config.name);
-    if(index != UINT64_MAX){
-        if(configs[index].type == STRING){
-            free(configs[index].value.string);
-        }
+    size_t index = str_hash_lookup(&config_hashtable, config.name.cstr);
 
-        configs[index].type = config.type;
-        if(config.type == STRING){
-            configs[index].value.string = string_duplicate(config.value.string);
-        }else{
-            configs[index].value = config.value;
-        }
+    if(index == STR_HASH_MISSING){
+        config_t copy = {
+            .name = string_dup(config.name),
+            .type = config.type,
+            .value = config.type == STRING? (config_value_t){.string = string_dup(config.value.string)} : config.value
+        };
+        list_push(configs, copy);
+        str_hash_insert(&config_hashtable, copy.name.cstr, list_size(configs) - 1);
         return;
     }
-
-    config_t copy = (config_t){.name = string_duplicate(config.name), .type = config.type};
-    if(config.type == STRING){
-        copy.value.string = string_duplicate(config.value.string);
-    }else{
-        copy.value = config.value;
+    if(configs[index].type == STRING){
+        str_free(configs[index].value.string);
     }
-    list_push(configs, copy);
-    str_hash_insert(&config_hashtable, copy.name, list_size(configs) - 1);
+
+    configs[index].type = config.type;
+    configs[index].value = config.type == STRING? (config_value_t){.string = string_dup(config.value.string)} : config.value;
 }
 
-config_t core_config_get(const char *name){
-    uint64_t index = str_hash_lookup(&config_hashtable, name);
+config_t core_config_get(const string_t name){
+    uint64_t index = str_hash_lookup(&config_hashtable, name.cstr);
     
-    if(index == UINT64_MAX){
-        return (config_t){.name = "empty", .type = EMPTY, .value.integer = 0 };
+    if(index == STR_HASH_MISSING){
+        return (config_t){.name = str("empty"), .type = EMPTY, .value.integer = 0 };
     }
     return configs[index];
 }
 
-// ===== ===== Module Management ===== =====
 
-void core_require_version(const char *modid, version_t min_version, version_t max_version){
-    
-}
 
-void core_require(const char *modid){
-
-}
-
-interface_t* core_module_get_interface(const char *modid){
-    return NULL;
-}
-
-// ===== ===== General Utilities ===== =====
+// ===== ===== Miscellaneous ===== =====
 
 void parse_argument(char *arg){
     char *first_equal = strchr(arg, '=');
     if(!first_equal){ 
         core_config_set((config_t){
-            .name = arg,
+            .name = str(arg),
             .type = BOOLEAN,
             .value.boolean = true
         });
@@ -442,32 +379,32 @@ void parse_argument(char *arg){
         return;
     }
     
-    char *name = string_duplicate_len(arg, name_length);
-    char *value = string_duplicate_len(first_equal + 1, value_length); 
+    string_t name = string_dup_len(str(arg), name_length);
+    string_t value = string_dup_len(str(first_equal + 1), value_length); 
     
     config_t config_entry = {.name = name};
     
-    if(strcmp(value, "true") == 0){
+    if(string_equal(value, str("true"))){
         config_entry.type = BOOLEAN;
         config_entry.value.boolean = true;
-    }else if(strcmp(value, "false") == 0){
+    }else if(string_equal(value, str("false"))){
         config_entry.type = BOOLEAN;
         config_entry.value.boolean = false;
-    }else if(isdigit(value[0])){
-        if(strchr(value, '.') == NULL){
+    }else if(isdigit(value.cstr[0])){
+        if(strchr(value.cstr, '.') == NULL){
             config_entry.type = INTEGER;
-            config_entry.value.integer = atoi(value);
+            config_entry.value.integer = atoi(value.cstr);
         }else{
             config_entry.type = REAL;
-            config_entry.value.real = atof(value);
+            config_entry.value.real = atof(value.cstr);
         } 
     }else{
         config_entry.type = STRING;
         config_entry.value.string = value;
     }
     core_config_set(config_entry);
-    free(name);
-    free(value);
+    str_free(name);
+    str_free(value);
 }
 
 bool version_valid(version_t version, version_t min, version_t max){
@@ -487,14 +424,15 @@ bool version_valid(version_t version, version_t min, version_t max){
 
 // ===== ===== Platform Abstraction ===== =====
 
-char **platform_enumerate_directory(char *directory_path, bool directories) {
-    if (directory_path == NULL) {
+string_t *platform_enumerate_directory(string_t directory_path, bool directories) {
+    if (directory_path.cstr == NULL) {
         return NULL;
     }
-    char **file_list = list_init(char *);
+    string_t *file_list = list_init(string_t);
+    core_log(DEBUG, "%i", list_size(file_list));
 
 #ifdef UNIX
-    DIR *directory = opendir(directory_path);
+    DIR *directory = opendir(directory_path.cstr);
 
     if (!directory){
         core_log(ERROR, "invalid search handle for path %s", directory_path);    
@@ -504,17 +442,18 @@ char **platform_enumerate_directory(char *directory_path, bool directories) {
     struct dirent *entry;
 
     while ( (entry = readdir(directory)) ) {
-        if (directories && entry->d_type != 4 && strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0) 
+        if(directories != (entry->d_type == DT_DIR))
             continue;
-        if (!directories && entry->d_type != 8)
+        if(strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
             continue;
-        
-        list_push(file_list, string_duplicate(entry->d_name));
+
+
+        list_push(file_list, string_dup(str(entry->d_name)));
     }
     closedir(directory);
 
 #elif defined(WINDOWS) //copied directly out of M$ docs
-    char *search_path = string_join(2, directory_path, "\\*");
+    char *search_path = string_path(directory_path, str("\\*"));
     WIN32_FIND_DATA ffd;
     HANDLE hFind = INVALID_HANDLE_VALUE;
 
@@ -528,7 +467,7 @@ char **platform_enumerate_directory(char *directory_path, bool directories) {
 
     do{
         if ((bool)(ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == directories){
-            list_push(file_list, string_duplicate(ffd.cFileName));
+            list_push(file_list, string_dup(str(ffd.cFileName)));
         }
     }while (FindNextFile(hFind, &ffd) != 0);
 
@@ -536,30 +475,32 @@ char **platform_enumerate_directory(char *directory_path, bool directories) {
     return file_list;
 }
 
-shared_object_t *platform_library_load(char *path) {
+shared_object_t *platform_library_load(string_t path) {
     shared_object_t *obj = NULL;
-    #ifdef UNIX
-        obj = dlopen(path, RTLD_LAZY);
-    #elif defined(WINDOWS)
-        obj = LoadLibraryExA(path, NULL, DONT_RESOLVE_DLL_REFERENCES);
+    #ifdef UNIX    
+        obj = dlopen(path.cstr, RTLD_LAZY);
         if(obj == NULL){
-            core_log(ERROR, "DLL LoadLibrary error %d", GetLastError());
+            core_log(ERROR, "loaded %s with error %s", path, dlerror());
+        }
+    #elif defined(WINDOWS)
+        obj = LoadLibraryA(path.cstr);
+        if(obj == NULL){
+            core_log(ERROR, "loaded %s with error %i", path, GetLastError());
         }
     #endif 
     return obj;
 }
 
-function_pointer_t *platform_library_load_symbol(shared_object_t *object, char *name) {
+function_pointer_t *platform_library_load_symbol(shared_object_t *object, string_t name) {
     function_pointer_t *function = NULL;
     #ifdef UNIX
-        function = dlsym(object, name);
+        function = dlsym(object, name.cstr);
     #elif defined(WINDOWS)
-        function = (function_pointer_t*)GetProcAddress(object, name);
+        function = (function_pointer_t*)GetProcAddress(object, name.cstr);
     #endif 
     
     if(function == NULL){
-        core_log(ERROR, "function not found: %s", name);
-        return NULL; 
+        core_log(ERROR, "function not found: %s", name.cstr);
     }
     return function;
 }
@@ -576,12 +517,12 @@ void core_log_(log_category_t category, char *restrict format, ...){
     FILE *output_file = stderr;
 
     switch(category){
-        case VERBOSE:fputs("[\033[34mVERBSE\033[0m]", output_file);break;         
-        case INFO:   fputs("[\033[34mINFO\033[0m]\t", output_file);break;         
-        case WARNING:fputs("[\033[93mWARN\033[0m]\t", output_file);break;
-        case ERROR:  fputs("[\033[31mERROR\033[0m]\t", output_file);break;
+        case VERBOSE: fputs("[\033[34mVERBSE\033[0m]", output_file);break;         
+        case INFO:    fputs("[\033[34mINFO\033[0m]\t", output_file);break;         
+        case WARNING: fputs("[\033[93mWARN\033[0m]\t", output_file);break;
+        case ERROR:   fputs("[\033[31mERROR\033[0m]\t", output_file);break;
         case CRITICAL:fputs("[\033[31mCRITICAL\033[0m]\t", output_file);break;
-        case DEBUG:  fputs("[\033[35mDEBUG\033[0m]\t", output_file);break;
+        case DEBUG:   fputs("[\033[35mDEBUG\033[0m]\t", output_file);break;
     }
     va_list args;
     va_start(args, format);

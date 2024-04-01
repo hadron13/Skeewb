@@ -16,14 +16,16 @@
  *  DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
  *  FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-#ifndef ds_H
-#define ds_H
+#ifndef DS_H
+#define DS_H
 
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
 #include <stdarg.h>
 #include <assert.h>
+#include <stdbool.h>
+#include <stddef.h>
 
 typedef struct {
     size_t size, capacity;
@@ -47,13 +49,13 @@ typedef struct {
 
 #define list_swap_delete(l, i)((l)[i] = (l)[list_size(l) - 1], list_pop(l))
 
-#define list_join(l1, l2)(l1 = list__join(l1, l2, sizeof(*l1)), assert(sizeof(*(l1))==sizeof(*(l2)))
+#define list_join(l1, l2) (l1 = list__join(l1, l2, sizeof(*l1)), assert(sizeof(*(l1))==sizeof(*(l2))) )
 
 #define list_resize(l, s)(l = list__resize(l, sizeof(*(l)), s))
-                        
 
 
-static void *list__init(size_t element_size){
+
+void *list__init(size_t element_size){
     list_header_t *header = malloc(element_size + sizeof(list_header_t));
     if(header == NULL)
         return NULL;
@@ -62,7 +64,7 @@ static void *list__init(size_t element_size){
     return (void*)(header + 1);
 }
 
-static void *list__resize(void *list, size_t element_size, size_t new_ammount) {
+void *list__resize(void *list, size_t element_size, size_t new_ammount) {
     list_header(list)->capacity = new_ammount;
     return (list_header_t*)realloc(list_header(list), (element_size * new_ammount) + sizeof(list_header_t)) + 1;
 }
@@ -77,6 +79,8 @@ static void *list__join(void *list1, void *list2, size_t element_size){
 
     return list1;
 }
+
+
 
 /*
  *  ||      ||     /\     //===\\  ||      ||  ========    /\     ||==\\   ||     ======
@@ -114,6 +118,7 @@ static void *list__join(void *list1, void *list2, size_t element_size){
 typedef struct{
     size_t length;
     size_t exponent;
+    // size_t tombstones;
     char **keys;
     uint64_t *values;
 }str_hash_t;
@@ -121,6 +126,7 @@ typedef struct{
 typedef struct{
     size_t length;
     size_t exponent;
+    // size_t tombstones;
     uint32_t *keys;
     uint32_t *values;
 }hash32_t;
@@ -128,10 +134,14 @@ typedef struct{
 typedef struct{
     size_t length;
     size_t exponent;
+    // size_t tombstones;
     uint64_t *keys;
     uint64_t *values;
 }hash64_t;
 
+#define STR_HASH_MISSING UINT64_MAX
+#define HASH32_MISSING UINT32_MAX
+#define HASH64_MISSING UINT64_MAX
 
 static int32_t  msi_lookup(uint64_t hash, int exp, int32_t idx);
 static uint64_t fnv1a_hash(const unsigned char *data, size_t length);
@@ -467,97 +477,125 @@ static void hash64_destroy(hash64_t *hash_table){
     free(hash_table->values);
 }
 
-
-
-static char *string_duplicate(const char *src);
-static char *string_duplicate_len(const char *src, size_t len);
-
-static char *string_duplicate(const char *src){
-    char *new_buffer = malloc(strlen(src) + 1);
-    if(!new_buffer)
-        return NULL;
-    strcpy(new_buffer, src);
-    return new_buffer;
-}
-
-static char *string_duplicate_len(const char *src, size_t len){
-
-    size_t string_size = strlen(src);
-    size_t new_length = len < string_size ? len : string_size;
-
-    char*result=malloc(new_length+1);
-    if(result){
-        memcpy(result, src, new_length);
-        result[new_length] = 0;
-    }
-    return result;
-
-}
-
 #ifndef PATH_SEPARATOR
     #define PATH_SEPARATOR '/'
+    #define PATH_SEPARATOR_STR "/"
 #endif 
 
-static char *string_path(const char *filename){
-    if(!filename)
-        return NULL;
-    char *last_slash = strrchr(filename, PATH_SEPARATOR);
-    if(!last_slash)
-        return NULL;
+
+typedef struct{
+    size_t length;
+    char  *cstr;
+}string_t;
+
+#define str(cstring) ((string_t){.length = strlen(cstring), .cstr = (cstring)})
+#define str_null     ((string_t){.length = 0, .cstr = NULL})
+#define str_alloc(str_size) ((string_t){.length = (str_size), .cstr = malloc((str_size) + 1)})
+#define str_free(string) (free((string).cstr))
+
+#define string_join(...)  (string_join_("",__VA_ARGS__, str_null))
+#define string_path(...)  (string_join_(str(PATH_SEPARATOR_STR),__VA_ARGS__, str_null))
+#define string_join_sep(separator, ...)  (string_join_((separator),__VA_ARGS__, str_null))
+
+string_t string_join_(string_t separator, ...);
+string_t string_dup(string_t string);
+string_t string_dup_len(string_t string, size_t length);
+bool     string_equal(string_t a, string_t b);
+string_t string_get_ext(string_t filename);
+string_t string_get_path(string_t filename);
+
+typedef string_t* string_temp_t;
+
+string_t str_temp(string_temp_t *temp, string_t string);
+void     str_temp_free(string_temp_t temp);
+#define  str_temp_join(temp, ...) (str_temp(temp, string_join_("",__VA_ARGS__, str_null)))
+
+
+
+string_t string_join_(string_t separator, ...){
+    va_list args;
+    va_start(args, separator);
     
-    size_t path_size = (size_t)(last_slash - filename) + 1;
+    size_t total_size = 0;
+    string_t current_string = va_arg(args, string_t);
+
+    for(;current_string.cstr != NULL; current_string = va_arg(args, string_t)){
+        total_size += current_string.length + separator.length; 
+    }
+    total_size -= separator.length;
+    va_end(args);
+
+    string_t joined_string = str_alloc(total_size);
+    va_start(args, separator);
     
-    return string_duplicate_len(filename, path_size);
+    for(size_t current_character = 0; current_character < total_size;){
+        if(current_character != 0){
+            memcpy(joined_string.cstr + current_character, separator.cstr, separator.length);
+            current_character += separator.length;
+        }
+        string_t current_string = va_arg(args, string_t);
+
+        memcpy(joined_string.cstr + current_character, current_string.cstr, current_string.length);
+        current_character += current_string.length;
+    }
+    joined_string.cstr[total_size] = '\0';
+    va_end(args);
+    return joined_string;
 }
 
-static const char *string_extension(const char* filename){
-    if(!filename)
-        return NULL;
-    char *last_point= strrchr(filename, '.');
+string_t string_dup(string_t string){
+    string_t duplicated = str_alloc(string.length);
+    memcpy(duplicated.cstr, string.cstr, string.length + 1);
+    return duplicated;
+}
+
+string_t string_dup_len(string_t string, size_t length){
+    string_t duplicated = str_alloc(string.length);
+    memcpy(duplicated.cstr, string.cstr, length + 1);
+    return duplicated;
+}
+
+bool string_equal(string_t a, string_t b){
+    return a.length == b.length && memcmp(a.cstr, b.cstr, a.length) == 0;
+}
+
+
+string_t string_get_ext(string_t filename){
+    if(!filename.cstr)
+        return str_null;
+    char *last_point= strrchr(filename.cstr, '.');
     if(!last_point)
         return filename;
-
-    return last_point;
+    return string_dup(str(last_point));
 }
 
 
-static char *string_join(size_t number, ...){
+string_t string_get_path(string_t filename){
+    if(!filename.cstr)
+        return str_null;
     
-    if(number <= 0)
-        return NULL;
-
-    va_list args; 
-    va_start(args, number); 
-
-    size_t total_size = 0;
-
-    for (size_t i = 0; i < number; i++) {
-        char *string = va_arg(args, char*);
-        if(!string)
-            continue;
-        
-        total_size += strlen(string);
-    }
-
-    va_end(args);
- 
-    char *final_string = malloc(total_size + 1);
-    if(!final_string)
-        return NULL;
+    char *last_slash = strrchr(filename.cstr, PATH_SEPARATOR);
     
-    final_string[0] = '\0'; 
-
-    va_start(args, number);
-   
-    for (size_t i = 0; i < number; i++) {
-        strcat(final_string, va_arg(args, char*)); 
-    }
-
-    va_end(args);
-
-    return final_string;
+    if(!last_slash)
+        return filename;
+    return string_dup((string_t){
+        .cstr = filename.cstr,
+        .length = last_slash - filename.cstr
+    });
 }
+
+
+string_t str_temp(string_temp_t *arena, string_t str){
+    list_push(*arena, str);
+    return str;
+}
+
+void str_temp_free(string_temp_t temp){
+    for(size_t i = 0; i < list_size(temp); i++){
+        str_free(temp[i]);
+    }
+    list_free(temp);
+}
+
 
 #endif 
-
-
