@@ -217,15 +217,19 @@ int main(int argc, char **argv) {
     string_t mod_directory = str_temp(&temp, string_path( cwd, str("mods")));
     
     core_log(INFO, "mod directory: %s", mod_directory.cstr);
-    string_t *mod_names = platform_enumerate_directory(mod_directory, false); 
+    string_t *mod_names = platform_enumerate_directory(mod_directory, true); 
     
     for(size_t i = 0; i < list_size(mod_names); i++){
-        string_t mod_path = str_temp(&temp, string_path(mod_directory, mod_names[i]));
-
-        if(!string_equal(str_temp(&temp, string_get_ext(mod_path)), str(DYLIB_EXTENSION)))
+        if(string_equal(mod_names[i], str("libs")))
             continue;
         
+        string_t mod_path = string_path(mod_directory, mod_names[i], str_temp_join(&temp, mod_names[i], str(DYLIB_EXTENSION)) );
+        str_temp(&temp, mod_path);
+        
+        // if(!string_equal(str_temp(&temp, string_get_ext(mod_path)), str(DYLIB_EXTENSION)))
+        //     continue;
 
+        core_log(INFO, "path %s", mod_path.cstr);
         core_log(INFO, "loading %s", mod_names[i].cstr);
         shared_object_t *mod_so = platform_library_load(mod_path);
 

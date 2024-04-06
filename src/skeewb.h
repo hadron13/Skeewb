@@ -94,6 +94,7 @@ typedef struct{
     void         (*quit)(int status);
     void         (*config_set)(config_t config);
     config_t     (*config_get)(const string_t name);
+    unsigned char* (*load_asset)(const string_t filename);
 }core_interface_t;
 
 

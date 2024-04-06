@@ -26,7 +26,7 @@
 LPSTR GetLastErrorAsString(void);
 #elif defined(UNIX)
 #   define PATH_SEP "/"
-#   define EXEC_EXT ".x86_64"
+#   define EXEC_EXT ""
 #   define DYLIB_EXT ".so"
 #   define SILENCE " > /dev/null "
 #   include<dirent.h>
@@ -132,7 +132,7 @@ string_t string_join_varargs(char separator, va_list args);
 
 string_t cstring_path_(char *root, ...);
 #define path(...)(cstring_path_(__VA_ARGS__, NULL))
-#define arena_path(arena, ...)(str_arena_add(arena, cstring_path_(__VA_ARGS__, NULL)))
+#define temp_path(arena, ...)(str_arena_add(arena, cstring_path_(__VA_ARGS__, NULL)))
 
 string_t *enumerate_directory(string_t path, bool list_directories);
 bool     make_directory(string_t name);

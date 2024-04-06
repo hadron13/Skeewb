@@ -508,7 +508,7 @@ typedef string_t* string_temp_t;
 
 string_t str_temp(string_temp_t *temp, string_t string);
 void     str_temp_free(string_temp_t temp);
-#define  str_temp_join(temp, ...) (str_temp(temp, string_join_("",__VA_ARGS__, str_null)))
+#define  str_temp_join(temp, ...) (str_temp(temp, string_join_(str(""),__VA_ARGS__, str_null)))
 
 
 

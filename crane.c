@@ -4,18 +4,18 @@
 
 #ifndef RPATH
 #   ifdef UNIX
-#   define RPATH " -Wl,-rpath,'$ORIGIN'/libs/ "
+#   define RPATH " -Wl,-rpath,'$ORIGIN'/../libs/ "
 #   else 
 #   define RPATH
 #endif
 #endif 
 
 #ifndef LIB 
-#   define LIB " -Lsrc"S"libs"S"SDL"S"build"
+#   define LIB " -Lsrc"S"libs"S"SDL"S"build "
 #endif 
 
 #ifndef INCLUDE
-#   define INCLUDE " -Isrc"S"libs"S"SDL"S"include -Isrc"S"libs"
+#   define INCLUDE " -Isrc"S"libs"S"SDL"S"include -Isrc"S"libs -Isrc"S"libs"S"glad"S"include"
 #endif 
 
 
@@ -58,14 +58,16 @@ int main(int argc, char **argv){
     string_arena_t arena = list_init(string_t);
 
     make_directory(str("build"));
-    make_directory(arena_path(&arena, "build", "mods"));
-    make_directory(arena_path(&arena, "build", "mods", "libs"));
+    make_directory(str("intermediates"));
+    make_directory(temp_path(&arena, "build", "mods"));
+    make_directory(temp_path(&arena, "build", "mods", "renderer"));
+    make_directory(temp_path(&arena, "build", "mods", "libs"));
 
-    if(system("cmake" SILENCE) == 0 && !file_exists(arena_path(&arena, "build", "mods", "libs", SDL_DYLIB))){
-        system("cmake -S src" S "libs" S "SDL" S    " -B src" S "libs" S "SDL" S "build " SILENCE);
-        system("cmake --build src" S "libs" S "SDL" S "build " SILENCE);
+    if(system("cmake" SILENCE) == 0 && !file_exists(temp_path(&arena, "build", "mods", "libs", SDL_DYLIB))){
 
 #       ifdef UNIX 
+        system("cmake -S src" S "libs" S "SDL" S    " -B src" S "libs" S "SDL" S "build " SILENCE);
+        system("cmake --build src" S "libs" S "SDL" S "build " SILENCE);
         move(str("src/libs/SDL/build/libSDL3.so.0.0.0"), str("build/mods/libs/libSDL3.so.0"));    
 #       elif defined(WINDOWS)
         //SDL3.dll?
@@ -73,9 +75,9 @@ int main(int argc, char **argv){
 #       endif
     }
     
-
-    compile(arena_path(&arena, "build", "skeewb" EXEC_EXT),            str(CFLAGS),        arena_path(&arena, "src", "skeewb.c") );
-    compile(arena_path(&arena, "build", "mods", "renderer" DYLIB_EXT), str(RENDERER_FLAGS), arena_path(&arena, "src", "renderer", "renderer.c"));
+    compile(temp_path(&arena, "build", "skeewb" EXEC_EXT),            str(CFLAGS),         temp_path(&arena, "src", "skeewb.c") );
+    compile(temp_path(&arena, "intermediates", "glad.o"),             str("-c -fPIC" CFLAGS),    temp_path(&arena, "src", "libs", "glad", "src", "glad.c"));
+    compile(temp_path(&arena, "build", "mods", "renderer", "renderer" DYLIB_EXT), str(RENDERER_FLAGS), temp_path(&arena, "src", "renderer", "renderer.c"), temp_path(&arena, "intermediates", "glad.o"));
 
     
     str_arena_free(arena);
