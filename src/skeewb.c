@@ -92,6 +92,12 @@ void     core_event_listen  (const string_t name, event_callback_t callback);
 void     core_config_set(config_t config);
 config_t core_config_get(const string_t name);
 
+
+//  ===== RESOURCES ====
+
+
+
+
 //  ====== MODULES =====
 
 
@@ -111,7 +117,7 @@ string_t             *platform_enumerate_directory(string_t directory_path, bool
 shared_object_t      *platform_library_load(string_t path);
 function_pointer_t   *platform_library_load_symbol(shared_object_t *object, string_t name);
 void                  platform_library_unload(shared_object_t *object);
-void                  platform_print_error();
+string_t              platform_get_cwd();
 
 
 //  ===== LIFETIME =====
@@ -515,6 +521,15 @@ void platform_library_unload(shared_object_t *object) {
     #elif defined(WINDOWS)
         FreeLibrary(object);
     #endif 
+}
+
+
+string_t platform_get_cwd(){
+    static string_t cwd = str_null;
+    
+    if(cwd.length > 0)
+        return cwd;
+
 }
 
 void core_log_(log_category_t category, char *restrict format, ...){
