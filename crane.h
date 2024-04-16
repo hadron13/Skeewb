@@ -35,7 +35,7 @@ LPSTR GetLastErrorAsString(void);
 #   include<errno.h>
 #endif
 
-#define S PATH_SEP
+#define _ PATH_SEP
 
 typedef struct {
     size_t size, capacity;
@@ -87,52 +87,133 @@ void *list__join(void *list1, void *list2, size_t element_size){
     return list1;
 }
 
+
+typedef enum { DEBUG, VERBOSE, INFO, WARNING, ERROR, CRITICAL } log_category_t;
+
+
 typedef struct{
-    size_t size;
-    char *cstring;
+    size_t length;
+    char  *cstr;
 }string_t;
 
-#define str(cstr) ((string_t){.size = strlen(cstr), .cstring = (cstr)})
-#define str_alloc(str_size) ((string_t){.size = (str_size), .cstring = malloc((str_size) + 1)})
-#define str_free(str)(free(str.cstring))
-#define str_null ((string_t){.size = 0, .cstring = NULL})
+#define str(cstring) ((string_t){.length = strlen(cstring), .cstr = (cstring)})
+#define str_null     ((string_t){.length = 0, .cstr = NULL})
+#define str_alloc(str_size) ((string_t){.length = (str_size), .cstr = malloc((str_size) + 1)})
+#define str_free(string) (free((string).cstr))
 
-typedef string_t* string_arena_t;
+#define string_join(...)  (string_join_(str(""), __VA_ARGS__, str_null))
+#define string_path(...)  (string_join_(str(PATH_SEPARATOR_STR),__VA_ARGS__, str_null))
+#define string_join_sep(separator, ...)  (string_join_((separator),__VA_ARGS__, str_null))
 
-string_t str_arena_add(string_arena_t *arena, string_t str){
+string_t string_join_(string_t separator, ...);
+string_t string_dup(string_t string);
+string_t string_dup_len(string_t string, size_t length);
+bool     string_equal(string_t a, string_t b);
+string_t string_get_ext(string_t filename);
+string_t string_get_path(string_t filename);
+
+typedef string_t* string_temp_t;
+
+string_t str_temp(string_temp_t *temp, string_t string);
+void     str_temp_free(string_temp_t temp);
+#define  str_temp_join(temp, ...) (str_temp(temp, string_join_(str(""),__VA_ARGS__, str_null)))
+#define  temp_path(temp, ...) (str_temp(temp, string_join_(str(PATH_SEP), __VA_ARGS__ , str_null)))
+
+
+
+
+string_t string_join_varargs(string_t separator, va_list args){
+    va_list args_copy;
+    va_copy(args_copy, args);
+
+    
+    size_t total_size = 0;
+    string_t current_string = va_arg(args, string_t);
+
+    for(;current_string.cstr != NULL; current_string = va_arg(args, string_t)){
+        total_size += current_string.length + separator.length; 
+    }
+    total_size -= separator.length;
+
+    string_t joined_string = str_alloc(total_size);
+    va_end(args);
+    
+    for(size_t current_character = 0; current_character < total_size;){
+        if(current_character != 0){
+            memcpy(joined_string.cstr + current_character, separator.cstr, separator.length);
+            current_character += separator.length;
+        }
+        string_t current_string = va_arg(args_copy, string_t);
+
+        memcpy(joined_string.cstr + current_character, current_string.cstr, current_string.length);
+        current_character += current_string.length;
+    }
+    joined_string.cstr[total_size] = '\0';
+    va_end(args_copy);
+
+    return joined_string;
+}
+
+string_t string_join_(string_t separator, ...){
+    va_list args;
+    va_start(args, separator);
+
+    return string_join_varargs(separator, args);
+}
+
+string_t string_dup(string_t string){
+    string_t duplicated = str_alloc(string.length);
+    memcpy(duplicated.cstr, string.cstr, string.length + 1);
+    return duplicated;
+}
+
+string_t string_dup_len(string_t string, size_t length){
+    string_t duplicated = str_alloc(string.length);
+    memcpy(duplicated.cstr, string.cstr, length + 1);
+    return duplicated;
+}
+
+bool string_equal(string_t a, string_t b){
+    return a.length == b.length && memcmp(a.cstr, b.cstr, a.length) == 0;
+}
+
+
+string_t string_get_ext(string_t filename){
+    if(!filename.cstr)
+        return str_null;
+    char *last_point= strrchr(filename.cstr, '.');
+    if(!last_point)
+        return filename;
+    return string_dup(str(last_point));
+}
+
+
+string_t string_get_path(string_t filename){
+    if(!filename.cstr)
+        return str_null;
+    
+    char *last_slash = strrchr(filename.cstr, PATH_SEP[0]);
+    
+    if(!last_slash)
+        return filename;
+    return string_dup((string_t){
+        .cstr = filename.cstr,
+        .length = last_slash - filename.cstr
+    });
+}
+
+
+string_t str_temp(string_temp_t *arena, string_t str){
     list_push(*arena, str);
     return str;
 }
 
-void str_arena_free(string_arena_t arena){
-    for(size_t i = 0; i < list_size(arena); i++){
-        free(arena[i].cstring);
+void str_temp_free(string_temp_t temp){
+    for(size_t i = 0; i < list_size(temp); i++){
+        str_free(temp[i]);
     }
-    list_free(arena);
+    list_free(temp);
 }
-
-#define str_arena_join(arena, ...)(str_arena_add(arena, string_join(__VA_ARGS__)))
-#define str_arena_join_sep(arena, separator, ...)(str_arena_add(arena, string_join_sep(separator, __VA_ARGS__)))
-#define str_arena_path(arena, ...)(str_arena_add(arena, string_path(__VA_ARGS__)))
-
-
-typedef enum { DEBUG, VERBOSE, INFO, WARNING, ERROR, CRITICAL } log_category_t;
-
-string_t string_duplicate(string_t string);
-string_t string_duplicate_len(string_t string, size_t length);
-string_t string_no_ext(string_t filename);
-string_t string_get_ext(string_t filename);
-
-string_t string_join_(unsigned int separator, ...);
-string_t string_join_varargs(char separator, va_list args);
-#define string_join(...)(string_join_(0, __VA_ARGS__, str_null))
-#define string_join_sep(separator, ...)(string_join_(separator, __VA_ARGS__, str_null))
-#define string_path(...)(string_join_((PATH_SEP)[0], __VA_ARGS__, str_null))
-
-
-string_t cstring_path_(char *root, ...);
-#define path(...)(cstring_path_(__VA_ARGS__, NULL))
-#define temp_path(arena, ...)(str_arena_add(arena, cstring_path_(__VA_ARGS__, NULL)))
 
 string_t *enumerate_directory(string_t path, bool list_directories);
 bool     make_directory(string_t name);
@@ -151,126 +232,17 @@ void crane_log_(const char *restrict file, size_t line, const char *restrict fun
 #define crane_log(category, ...) crane_log_(__FILE__, __LINE__, __func__, category,  __VA_ARGS__);
 
 
-string_t string_duplicate(string_t string){
-    string_t new_string = {.size = string.size, .cstring = malloc(string.size + 1) };
-    memcpy(new_string.cstring, string.cstring, string.size + 1);
-    return new_string;
-}
-
-string_t string_duplicate_len(string_t string, size_t length){
-    size_t final_length =  string.size < length? string.size : length;
-    string_t new_string = {.size = final_length, .cstring = malloc(final_length + 1)};
-    memcpy(new_string.cstring, string.cstring, final_length);
-    new_string.cstring[final_length] = 0;
-    return new_string;
-}
-
-string_t string_no_ext(string_t filename){
-    char *first_dot = strchr(filename.cstring, '.');
-    if(!first_dot)
-        return filename;
-    
-    size_t remaining = first_dot - filename.cstring;
-
-    return string_duplicate_len(filename, remaining);
-}
-
-string_t string_get_ext(string_t filename){
-    char *first_dot = strchr(filename.cstring, '.');
-    return string_duplicate(str(first_dot));
-}
-
-string_t string_join_(unsigned int separator, ...){
-    va_list args; 
-    va_start(args, separator); 
-
-    return string_join_varargs((char)separator, args);
-}
-
-string_t string_join_varargs(char separator, va_list args){
-    va_list args_copy;
-    va_copy(args_copy, args);
-    
-    size_t total_size = 0;
-    
-    string_t current_string = va_arg(args, string_t);
-
-    while(current_string.size > 0){
-        total_size += current_string.size;
-        if(separator)
-            total_size++;
-        current_string = va_arg(args, string_t);
-    }
-    if(separator)
-        total_size--;
-
-    va_end(args);
-    
-    string_t joined_string = str_alloc(total_size);
-    
-    for(size_t current_character = 0; current_character < total_size;){
-        if(separator && current_character != 0){
-            joined_string.cstring[current_character] = separator;
-            current_character++;
-        }
-
-        string_t current_string = va_arg(args_copy, string_t);
-
-        memcpy(joined_string.cstring + current_character, current_string.cstring, current_string.size);
-        current_character += current_string.size;
-    }
-    joined_string.cstring[total_size] = 0;
-
-    va_end(args_copy);
-    return joined_string;
-}
-
-string_t cstring_path_(char *root, ...){
-    va_list args;
-    va_start(args, root);
-    size_t total_size = 0, total_strings = 0;
-    
-    char *current_string = root;
-
-    while(current_string != NULL){
-        total_size += strlen(current_string) + 1;
-        total_strings++;
-        current_string = va_arg(args, char *);
-    }
-    total_size--;
-    va_end(args);
-    va_start(args, root);
-    
-    string_t joined_string = str_alloc(total_size);
-    joined_string.cstring[0] = 0;
-
-    current_string = root; 
-    for(size_t current_character = 0; current_character < total_size;){
-
-        current_character += strlen(current_string);
-        strcat(joined_string.cstring, current_string);
-
-        if(current_character < total_size - 1){
-            joined_string.cstring[current_character] = PATH_SEP[0];
-            current_character++;
-        } 
-        current_string = va_arg(args, char*);
-    }
-    va_end(args);
-    return joined_string;
-}
-
 string_t *enumerate_directory(string_t path, bool list_directories){
-    if (path.cstring == NULL) {
+    if (path.cstr == NULL) {
         return NULL;
     }
     string_t *file_list = list_init(string_t);
     
 #ifdef UNIX
-    DIR *directory = opendir(path.cstring);
+    DIR *directory = opendir(path.cstr);
 
     if (!directory){
-        crane_log(ERROR, "invalid search handle for path %s", path.cstring);    
+        crane_log(ERROR, "invalid search handle for path %s", path.cstr);    
         return NULL;
     }
     struct dirent *entry;
@@ -281,26 +253,26 @@ string_t *enumerate_directory(string_t path, bool list_directories){
         if (!list_directories && entry->d_type != 8)
             continue;
         
-        list_push(file_list, string_duplicate(str(entry->d_name)));
+        list_push(file_list, string_dup(str(entry->d_name)));
     }
     closedir(directory);
 
 #elif defined(WINDOWS) //copied directly out of M$ docs
-    string_t search_path = string_join(path, "\\*");
+    string_t search_path = string_join(path, str("\\*"));
     WIN32_FIND_DATA ffd;
     HANDLE hFind = INVALID_HANDLE_VALUE;
 
-    hFind = FindFirstFile(search_path.cstring, &ffd);
+    hFind = FindFirstFile(search_path.cstr, &ffd);
     str_free(search_path);
 
     if (INVALID_HANDLE_VALUE == hFind) {
-        crane_log(ERROR, "invalid search handle for path %s", path.cstring);    
+        crane_log(ERROR, "invalid search handle for path %s", path.cstr);    
         return NULL;
     }
 
     do{
         if ((bool)(ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == list_directories){
-            list_push(file_list, string_duplicate(str(ffd.cFileName)));
+            list_push(file_list, string_dup(str(ffd.cFileName)));
         }
     }while (FindNextFile(hFind, &ffd) != 0);
 
@@ -309,9 +281,9 @@ string_t *enumerate_directory(string_t path, bool list_directories){
 }
 
 bool make_directory(string_t name){ 
-    crane_log(INFO, "creating directory %s", name.cstring);
+    crane_log(INFO, "creating directory %s", name.cstr);
 #   ifdef UNIX
-        if (mkdir(name.cstring, 0755) < 0) {
+        if (mkdir(name.cstr, 0755) < 0) {
             if (errno == EEXIST) {
                 errno = 0;
             } else {
@@ -320,7 +292,7 @@ bool make_directory(string_t name){
             }
         }
 #   elif defined(WINDOWS)
-    if (!CreateDirectoryA(name.cstring, NULL)) {
+    if (!CreateDirectoryA(name.cstr, NULL)) {
         //crane_log(WARNING, "could not create directory %s: %s", name, GetLastErrorAsString());
         return false;
     }
@@ -330,7 +302,7 @@ bool make_directory(string_t name){
 
 
 bool file_exists(string_t filename){
-    FILE *file = fopen(filename.cstring, "r");
+    FILE *file = fopen(filename.cstr, "r");
     if(!file)
         return false;
 
@@ -341,44 +313,67 @@ bool file_exists(string_t filename){
 
 bool move(string_t old_path, string_t new_path){
     #ifdef UNIX
-    int status = rename(old_path.cstring, new_path.cstring);
+    int status = rename(old_path.cstr, new_path.cstr);
     if(status){
-        crane_log(ERROR, "%s", strerror(errno));
+        crane_log(ERROR, " '%s' to '%s'  %s", strerror(errno));
     }
     return status;
     #elif defined(WINDOWS)
     
+    MoveFileA(old_path.cstr, new_path.cstr);
+
     #endif
 }
+
+
+bool copy(string_t source, string_t destination){
+    #ifdef UNIX
+    string_t command = string_join_sep(str(" "), str("cp"), source, destination);
+    crane_log(INFO, "copying %s to %s with '%s'", source.cstr, destination.cstr, command.cstr);
+    int status = system(command.cstr);
+    if(status){
+        crane_log(ERROR, " '%s' to '%s'  %s", strerror(errno));
+    }
+    str_free(command);
+    return status;
+    #elif defined(WINDOWS)
+    
+    MoveFileA(old_path.cstr, new_path.cstr);
+
+    #endif
+}
+
 
 
 int compile_(string_t output, string_t flags, ...){
     va_list args;
     va_start(args, flags);
     
+    size_t number_of_sources;
+
     bool should_compile = !file_exists(output);
 
-    for(string_t source_file = va_arg(args, string_t); !should_compile && source_file.size > 0;){
+    for(string_t source_file = va_arg(args, string_t); !should_compile && source_file.length > 0;){
         
         if(is_file_older_than(output, source_file)){
             should_compile = true;
         }
+        number_of_sources++;
         source_file = va_arg(args, string_t);
     }
-
+    va_end(args);
     if(!should_compile)
         return 0;
 
-    va_end(args);
     va_start(args, flags);
 
     string_t dash_o = str("-o");
 
-    string_t sources = string_join_varargs(' ', args);
-    string_t command = string_join_sep(' ', get_compiler(), sources, flags, str("-o"), output);
+    string_t sources = string_join_varargs(str(" "), args);
+    string_t command = string_join_sep(str(" "), get_compiler(), sources, flags, str("-o"), output);
 
-    crane_log(VERBOSE, "%s", command.cstring)
-    int status = system(command.cstring);
+    crane_log(VERBOSE, "%s", command.cstr);
+    int status = system(command.cstr);
     
     str_free(sources);
     str_free(command);
@@ -401,7 +396,7 @@ int rebuild_(char *source, int argc, char **argv){
     if(is_file_older_than(executable, source_file)){
         crane_log(INFO, "rebuilding...");
         compile(executable, str("-g"), source_file);
-        system(executable.cstring);
+        system(executable.cstr);
         exit(0);
     }
     return 0;
@@ -417,21 +412,21 @@ bool is_file_older_than(string_t path1, string_t path2){
     saAttr.nLength = sizeof(SECURITY_ATTRIBUTES);
     saAttr.bInheritHandle = TRUE;
 
-    HANDLE path1_fd = CreateFile(path1.cstring, GENERIC_READ, FILE_SHARE_READ, &saAttr, OPEN_EXISTING, FILE_ATTRIBUTE_READONLY, NULL);
+    HANDLE path1_fd = CreateFile(path1.cstr, GENERIC_READ, FILE_SHARE_READ, &saAttr, OPEN_EXISTING, FILE_ATTRIBUTE_READONLY, NULL);
     if (path1_fd == INVALID_HANDLE_VALUE) {
-        crane_log(CRITICAL, "could not open file %s: %s", path1.cstring, GetLastErrorAsString());
+        crane_log(CRITICAL, "could not open file %s: %s", path1.cstr, GetLastErrorAsString());
     }
     if (!GetFileTime(path1_fd, NULL, NULL, &path1_time)) {
-        crane_log(CRITICAL, "could not get time of %s: %s", path1.cstring, GetLastErrorAsString());
+        crane_log(CRITICAL, "could not get time of %s: %s", path1.cstr, GetLastErrorAsString());
     }
     CloseHandle(path1_fd);
 
-    HANDLE path2_fd = CreateFile(path2.cstring, GENERIC_READ, FILE_SHARE_READ, &saAttr, OPEN_EXISTING, FILE_ATTRIBUTE_READONLY, NULL);
+    HANDLE path2_fd = CreateFile(path2.cstr, GENERIC_READ, FILE_SHARE_READ, &saAttr, OPEN_EXISTING, FILE_ATTRIBUTE_READONLY, NULL);
     if (path2_fd == INVALID_HANDLE_VALUE) {
-        crane_log(CRITICAL, "could not open file %s: %s", path2.cstring, GetLastErrorAsString());
+        crane_log(CRITICAL, "could not open file %s: %s", path2.cstr, GetLastErrorAsString());
     }
     if (!GetFileTime(path2_fd, NULL, NULL, &path2_time)) {
-        crane_log(CRITICAL, "could not get time of %s: %s", path2.cstring, GetLastErrorAsString());
+        crane_log(CRITICAL, "could not get time of %s: %s", path2.cstr, GetLastErrorAsString());
     }
     CloseHandle(path2_fd);
 
@@ -439,13 +434,13 @@ bool is_file_older_than(string_t path1, string_t path2){
 #elif defined(UNIX)
     struct stat statbuf = {0};
 
-    if (stat(path1.cstring, &statbuf) < 0) {
-        crane_log(CRITICAL, "could not stat %s: %s\n", path1.cstring, strerror(errno));
+    if (stat(path1.cstr, &statbuf) < 0) {
+        crane_log(CRITICAL, "could not stat %s: %s\n", path1.cstr, strerror(errno));
     }
     int path1_time = statbuf.st_mtime;
 
-    if (stat(path2.cstring, &statbuf) < 0) {
-        crane_log(CRITICAL, "could not stat %s: %s\n", path2.cstring, strerror(errno));
+    if (stat(path2.cstr, &statbuf) < 0) {
+        crane_log(CRITICAL, "could not stat %s: %s\n", path2.cstr, strerror(errno));
     }
     int path2_time = statbuf.st_mtime;
 

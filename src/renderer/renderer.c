@@ -11,9 +11,20 @@
 SDL_Window *window;
 SDL_GLContext *gl_context;
 
+
+
+
 void start(core_interface_t *core);
 void loop(core_interface_t *core);
 void quit(core_interface_t *core);
+
+
+
+
+
+
+
+
 
 module_desc_t load(core_interface_t *core){
     core->console_log(INFO, "starting renderer");
@@ -69,6 +80,18 @@ void start(core_interface_t *core){
    
     core->console_log(INFO, "OpenGL version %s loaded", glGetString(GL_VERSION));
     core->console_log(INFO, "Vendor: %s", glGetString(GL_VENDOR));
+
+
+    resource_t vertex_resource = core->resource_load(str("vert"), str("renderer/shaders/test_vert.glsl"));
+    resource_t fragment_resource = core->resource_load(str("frag"), str("renderer/shaders/test_frag.glsl"));
+
+    string_t vertex_source = core->resource_string(vertex_resource);
+    string_t fragment_source = core->resource_string(fragment_resource);
+
+    core->console_log(DEBUG, "%s", vertex_source.cstr);
+    core->console_log(DEBUG, "%s", fragment_source.cstr);
+
+
 }
 
 

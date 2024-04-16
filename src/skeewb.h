@@ -19,13 +19,16 @@
 
 #ifndef SKEEWB_H
 #define SKEEWB_H
+#include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
 
-#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
-#define WINDOWS
-#elif defined(__unix__) || defined(__unix)
-#define UNIX
+#if !defined(WINDOWS) && !defined(UNIX)
+#   if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
+#       define WINDOWS
+#   elif defined(__unix__) || defined(__unix)
+#       define UNIX
+#   endif
 #endif
 
 
@@ -53,7 +56,7 @@ typedef void event_t;
 
 typedef void(*event_callback_t)(void *context);
 
-typedef enum { DEBUG, VERBOSE, INFO, WARNING, ERROR, CRITICAL } log_category_t;
+typedef enum {ERROR, DEBUG, VERBOSE, INFO, WARNING, CRITICAL } log_category_t;
 
 typedef enum { EMPTY, BOOLEAN, INTEGER, REAL, STRING } config_type_t;
 
@@ -84,23 +87,24 @@ typedef struct{
 
 typedef struct{
     string_t name;
-    
+    string_t path;
+    FILE *file;
 }resource_t;
 
 
 typedef struct{
     version_t version;
-    union{
-        void (*_log_)(log_category_t category, char *restrict format, ...);         //use this one to override the log function
-        void (*console_log)(log_category_t category, char *restrict format, ...);   //for LSP enjoyement
-    };
-    void         (*event_register)(const string_t name);
-    void         (*event_trigger) (const string_t name, void *context);
-    void         (*event_listen)  (const string_t name, event_callback_t callback);
-    void         (*quit)(int status);
-    void         (*config_set)(config_t config);
-    config_t     (*config_get)(const string_t name);
-    unsigned char* (*load_asset)(const string_t filename);
+
+    void         (*console_log)(log_category_t category, char *restrict format, ...);   // printf-like logging function
+    void         (*event_register)(const string_t name);                                // registers an event
+    void         (*event_trigger) (const string_t name, void *context);                 // triggers an event, calling all listening functions
+    void         (*event_listen)  (const string_t name, event_callback_t callback);     // register functions to listen to an event
+    void         (*quit)(int status);                                                   // engine shutdown, calls 'quit' event
+    void         (*config_set)(config_t config);                                        // sets a configuration
+    config_t     (*config_get)(const string_t name);                                    // retrieves a configuration
+    resource_t   (*resource_load)(const string_t name, const string_t path);            // loads a new resource, if already loaded, retrieves resource
+    resource_t   (*resource_overload)(const string_t name, const string_t new_path);    // overloads existing resource
+    string_t     (*resource_string)(resource_t resource);                               // reads resource file into a buffer
 }core_interface_t;
 
 
@@ -108,7 +112,7 @@ typedef struct{
     #define MODULE ""
 #endif
 
-#define console_log(cat, fmt, ...) console_log(cat, "[\033[34m" MODULE" |"__FILE__ ":\033[35m%d \033[93m%s()\033[0m] "fmt, __LINE__, __func__ __VA_OPT__(,) __VA_ARGS__)
+#define console_log(cat, fmt, ...) console_log(cat, "[\033[34m" MODULE" | "__FILE__ ":\033[35m%d \033[93m%s()\033[0m] "fmt, __LINE__, __func__ __VA_OPT__(,) __VA_ARGS__)
 
 module_desc_t load(core_interface_t *core);
 

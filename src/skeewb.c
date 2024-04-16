@@ -14,10 +14,11 @@
 #define CORE
 
 
-#define ICE_CPU_IMPL
-#include "ice_cpu.h"
-#include "ds.h"
-#include "skeewb.h"
+#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
+#define WINDOWS
+#elif defined(__unix__) || defined(__unix)
+#define UNIX
+#endif
 
 #ifdef UNIX
 #define PATH_SEPARATOR '/'
@@ -41,6 +42,11 @@
 #define BOOLEAN BOOLEAN_
 
 #endif
+
+#define ICE_CPU_IMPL
+#include "ice_cpu.h"
+#include "ds.h"
+#include "skeewb.h"
 
 
 /*
@@ -95,7 +101,9 @@ config_t core_config_get(const string_t name);
 
 //  ===== RESOURCES ====
 
-
+resource_t  core_resource_load(const string_t name, const string_t path);
+resource_t  core_resource_overload(const string_t name, const string_t new_path);
+string_t    core_resource_string(resource_t resource);
 
 
 //  ====== MODULES =====
@@ -103,13 +111,12 @@ config_t core_config_get(const string_t name);
 
 //  ===== LOGGING ======
 void core_log_(log_category_t category, char *restrict format, ...);
-#define core_log(category, format, ...) core_log_(category, "[\033[34m" MODULE" |"__FILE__ ":\033[35m%d \033[93m%s()\033[0m] "format, __LINE__, __func__ __VA_OPT__(,) __VA_ARGS__)
+#define core_log(category, format, ...) core_log_(category, "[\033[34m" MODULE" | "__FILE__ ":\033[35m%d \033[93m%s()\033[0m] "format, __LINE__, __func__ __VA_OPT__(,) __VA_ARGS__)
 
 
 //  ======= MISC =======
 void    parse_argument(char *arg);
 bool    version_valid(version_t version, version_t min, version_t max);
-char   *core_get_cwd();
 
 
 //  ===== PLATFORM =====
@@ -134,13 +141,16 @@ void core_quit(int status);
 
 core_interface_t core_interface = {
     {0, 0, 1},
-    ._log_ = core_log_,
+    .console_log = core_log_,
     .event_register = core_event_register,
     .event_trigger = core_event_trigger,
     .event_listen = core_event_listen,
     .quit = core_quit,
     .config_set = core_config_set,
     .config_get = core_config_get,
+    .resource_load = core_resource_load,
+    .resource_overload = core_resource_overload,
+    .resource_string = core_resource_string,
 };
 
 
@@ -152,6 +162,11 @@ event_t *events;
 
 str_hash_t config_hashtable;
 config_t *configs;
+
+str_hash_t resource_hashtable;
+resource_t *resources;
+
+string_t current_directory;
 
 
 
@@ -166,24 +181,26 @@ config_t *configs;
 int main(int argc, char **argv) {
     atexit(cleanup);
 
-    modules = list_init(module_t);
-    events =  list_init(event_t);
-    configs = list_init(config_t);
-    module_hashtable = str_hash_create(5);
-    event_hashtable  = str_hash_create(8);
-    config_hashtable = str_hash_create(8);
+    modules   = list_init(module_t);
+    events    = list_init(event_t);
+    configs   = list_init(config_t);
+    resources = list_init(resource_t);
+    module_hashtable    = str_hash_create(5);
+    event_hashtable     = str_hash_create(8);
+    config_hashtable    = str_hash_create(8);
+    resource_hashtable  = str_hash_create(8);
 
     core_log(INFO, "starting");
     
 
-    FILE *config_file = fopen("config.txt", "r");
+    FILE  *config_file = fopen("config.txt", "r");
     if(!config_file){
         core_log(INFO, "reading config file");
         // TODO: read config file
     }
 
     #ifdef WINDOWS
-    if(SetDllDirectoryA("D:\\Skeewb\\build\\mods\\libs") == 0){
+    if(SetDllDirectoryA("build\\mods\\libs") == 0){
         core_log(ERROR, "could not add dll directory with error %i", GetLastError());
     }
     #endif
@@ -217,10 +234,12 @@ int main(int argc, char **argv) {
     core_event_register(str("loop"));
     core_event_register(str("quit"));
 
-    string_temp_t temp = list_init(string_t);
-    string_t cwd = str_temp(&temp, string_get_path(str(argv[0])));
 
-    string_t mod_directory = str_temp(&temp, string_path( cwd, str("mods")));
+    current_directory = string_get_path(str(argv[0]));
+
+    string_temp_t temp = list_init(string_t);
+
+    string_t mod_directory = str_temp(&temp, string_path( current_directory, str("mods")));
     
     core_log(INFO, "mod directory: %s", mod_directory.cstr);
     string_t *mod_names = platform_enumerate_directory(mod_directory, true); 
@@ -284,12 +303,22 @@ void cleanup(void){
         if(configs[i].type == STRING)
             str_free(configs[i].value.string);
     }
+
+    for(size_t i = 0; i < list_size(resources); i++){
+        str_free(resources[i].name);
+        str_free(resources[i].path);
+        fclose(resources[i].file);
+    }
+
     list_free(modules);
     list_free(events);
     list_free(configs);
-    
+    list_free(resources);
+
     str_hash_destroy(&module_hashtable);
     str_hash_destroy(&event_hashtable);
+    str_hash_destroy(&config_hashtable);
+    str_hash_destroy(&resource_hashtable);
 }
 
 void core_quit(int status){
@@ -362,6 +391,53 @@ config_t core_config_get(const string_t name){
     }
     return configs[index];
 }
+
+
+// ===== ==== Resources ==== =====
+
+resource_t core_resource_load(const string_t name, const string_t path){
+    size_t index = str_hash_lookup(&resource_hashtable, name.cstr);
+    string_t full_path = string_path(current_directory, str("mods"), path);
+
+    if(index == STR_HASH_MISSING){
+        resource_t resource = {
+            .name = string_dup(name),
+            .path = full_path,
+            .file = fopen(full_path.cstr, "rb")
+        };
+        if(resource.file == NULL){
+            core_log(ERROR, "could not load resource '%s' at %s", name.cstr, path.cstr);
+            return (resource_t){.name = str_null, .path = str_null, .file = NULL};
+        }
+        core_log(INFO, "loaded resource '%s' at %s", name.cstr, path.cstr);
+
+        list_push(resources, resource);
+        str_hash_insert(&resource_hashtable, resource.name.cstr, list_size(resources) - 1);
+        return resource;
+    }
+    core_log(INFO, "retrieved resource '%s' at %s", name.cstr, path.cstr);
+    return resources[index];
+}
+
+resource_t core_resource_overload(const string_t name, const string_t new_path){
+    return (resource_t){.name = str_null, .path = str_null, .file = NULL};
+}
+
+string_t core_resource_string(resource_t resource){
+    if (resource.file == NULL) return str_null;
+
+    fseek(resource.file, 0, SEEK_END);
+    size_t file_size = ftell(resource.file);
+    fseek(resource.file, 0, SEEK_SET);  
+
+    string_t string = str_alloc(file_size);
+    fread(string.cstr, file_size, 1, resource.file);
+
+    string.cstr[file_size] = 0;
+
+    return string;
+}
+
 
 
 
@@ -463,12 +539,12 @@ string_t *platform_enumerate_directory(string_t directory_path, bool directories
     closedir(directory);
 
 #elif defined(WINDOWS) //copied directly out of M$ docs
-    char *search_path = string_path(directory_path, str("\\*"));
+    string_t search_path = string_path(directory_path, str("\\*"));
     WIN32_FIND_DATA ffd;
     HANDLE hFind = INVALID_HANDLE_VALUE;
 
-    hFind = FindFirstFile(search_path, &ffd);
-    free(search_path);
+    hFind = FindFirstFile(search_path.cstr, &ffd);
+    str_free(search_path);
 
     if (INVALID_HANDLE_VALUE == hFind) {
         core_log(ERROR, "invalid search handle for path %s", directory_path);    
@@ -476,9 +552,12 @@ string_t *platform_enumerate_directory(string_t directory_path, bool directories
     }
 
     do{
-        if ((bool)(ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == directories){
-            list_push(file_list, string_dup(str(ffd.cFileName)));
-        }
+        if ((bool)(ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != directories)
+            continue;
+        if(strcmp(ffd.cFileName, ".") == 0 || strcmp(ffd.cFileName, "..") == 0)
+            continue;
+        list_push(file_list, string_dup(str(ffd.cFileName)));
+        
     }while (FindNextFile(hFind, &ffd) != 0);
 
 #endif 
@@ -490,12 +569,12 @@ shared_object_t *platform_library_load(string_t path) {
     #ifdef UNIX    
         obj = dlopen(path.cstr, RTLD_LAZY);
         if(obj == NULL){
-            core_log(ERROR, "loaded %s with error %s", path, dlerror());
+            core_log(ERROR, "loaded %s with error %s", path.cstr, dlerror());
         }
     #elif defined(WINDOWS)
         obj = LoadLibraryA(path.cstr);
         if(obj == NULL){
-            core_log(ERROR, "loaded %s with error %i", path, GetLastError());
+            core_log(ERROR, "loaded %s with error %i", path.cstr, GetLastError());
         }
     #endif 
     return obj;
@@ -523,17 +602,8 @@ void platform_library_unload(shared_object_t *object) {
     #endif 
 }
 
-
-string_t platform_get_cwd(){
-    static string_t cwd = str_null;
-    
-    if(cwd.length > 0)
-        return cwd;
-
-}
-
 void core_log_(log_category_t category, char *restrict format, ...){
-    FILE *output_file = stderr;
+    FILE *output_file = stderr; 
 
     switch(category){
         case VERBOSE: fputs("[\033[34mVERBSE\033[0m]", output_file);break;         

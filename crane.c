@@ -1,6 +1,6 @@
 #include"crane.h"
 #include<locale.h>
-
+ 
 
 #ifndef RPATH
 #   ifdef UNIX
@@ -11,16 +11,16 @@
 #endif 
 
 #ifndef LIB 
-#   define LIB " -Lsrc"S"libs"S"SDL"S"build "
+#   define LIB " -Lsrc"_"libs"_"SDL"_"build "
 #endif 
 
 #ifndef INCLUDE
-#   define INCLUDE " -Isrc"S"libs"S"SDL"S"include -Isrc"S"libs -Isrc"S"libs"S"glad"S"include"
+#   define INCLUDE " -Isrc"_"libs"_"SDL"_"include -Isrc"_"libs -Isrc"_"libs"_"glad"_"include"
 #endif 
 
 
 #ifndef CFLAGS
-#   define CFLAGS LIB INCLUDE " -g   " 
+#   define CFLAGS LIB INCLUDE " -g " 
 #endif 
 
 #ifndef MODULE_CFLAGS
@@ -55,30 +55,46 @@ int main(int argc, char **argv){
         exit(-1);
     } 
     rebuild(argc, argv);
-    string_arena_t arena = list_init(string_t);
+    string_temp_t temp = list_init(string_t);
 
     make_directory(str("build"));
     make_directory(str("intermediates"));
-    make_directory(temp_path(&arena, "build", "mods"));
-    make_directory(temp_path(&arena, "build", "mods", "renderer"));
-    make_directory(temp_path(&arena, "build", "mods", "libs"));
+    make_directory(str("build"_"mods"));
+    make_directory(str("build"_"mods"_"renderer"));
+    make_directory(str("build"_"mods"_"renderer"_"shaders"));
+    make_directory(str("build"_"mods"_"libs"));
 
-    if(system("cmake" SILENCE) == 0 && !file_exists(temp_path(&arena, "build", "mods", "libs", SDL_DYLIB))){
+    if(system("cmake" SILENCE) == 0 && !file_exists(str("build"_"mods"_"libs"_ SDL_DYLIB))){
 
 #       ifdef UNIX 
-        system("cmake -S src" S "libs" S "SDL" S    " -B src" S "libs" S "SDL" S "build " SILENCE);
-        system("cmake --build src" S "libs" S "SDL" S "build " SILENCE);
+        system("cmake -S src" _ "libs" _ "SDL" _ " -B src" _ "libs" _ "SDL" _ "build " SILENCE);
+        system("cmake --build src" _ "libs" _ "SDL" _ "build " SILENCE);
         move(str("src/libs/SDL/build/libSDL3.so.0.0.0"), str("build/mods/libs/libSDL3.so.0"));    
 #       elif defined(WINDOWS)
-        //SDL3.dll?
-        move(str("src/libs/SDL/build/SDL3.dll"), str("build/mods/libs/SDL3.dll"));    
+        system("cmake -S src\\libs\\SDL -B src\\libs\\SDL\\build -DCMAKE_TOOLCHAIN_FILE=build-scripts\\cmake-toolchain-mingw64-x86_64.cmake -G\"MinGW Makefiles\"");
+        system("cmake --build src\\libs\\SDL\\build " SILENCE);
+        move(str("src\\libs\\SDL\\build\\SDL3.dll"), str("build\\mods\\libs\\SDL3.dll"));    
 #       endif
     }
     
-    compile(temp_path(&arena, "build", "skeewb" EXEC_EXT),            str(CFLAGS),         temp_path(&arena, "src", "skeewb.c") );
-    compile(temp_path(&arena, "intermediates", "glad.o"),             str("-c -fPIC" CFLAGS),    temp_path(&arena, "src", "libs", "glad", "src", "glad.c"));
-    compile(temp_path(&arena, "build", "mods", "renderer", "renderer" DYLIB_EXT), str(RENDERER_FLAGS), temp_path(&arena, "src", "renderer", "renderer.c"), temp_path(&arena, "intermediates", "glad.o"));
-
+    compile(str("build"_"skeewb" EXEC_EXT),                      str(CFLAGS),            str("src"_"skeewb.c") );
+    compile(str("intermediates"_"glad.o"),                       str("-c -fPIC" CFLAGS), str("src"_"libs"_"glad"_"src"_"glad.c"));
+    compile(str("build"_"mods"_"renderer"_"renderer" DYLIB_EXT), str(RENDERER_FLAGS),    str("src"_"renderer"_"renderer.c"), str("intermediates"_"glad.o"));
     
-    str_arena_free(arena);
+    string_t source = str("src"_"renderer"_"shaders");
+    string_t *shaders = enumerate_directory(source, false);
+    
+    string_t destination = str("build"_"mods"_"renderer"_"shaders");
+
+    for(size_t i = 0; i < list_size(shaders); i++){
+        copy(temp_path(&temp, source, shaders[i]), temp_path(&temp, destination, shaders[i]));
+    }
+    
+    if(strcmp(argv[1], "run") == 0){
+        crane_log(INFO, "running");
+        system("build"_"skeewb" EXEC_EXT);
+    }
+
+
+    str_temp_free(temp);
 }

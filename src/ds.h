@@ -24,8 +24,9 @@
 #include <string.h>
 #include <stdarg.h>
 #include <assert.h>
-#include <stdbool.h>
 #include <stddef.h>
+#include <stdbool.h>
+#include <stdio.h>
 
 typedef struct {
     size_t size, capacity;
@@ -493,7 +494,7 @@ typedef struct{
 #define str_alloc(str_size) ((string_t){.length = (str_size), .cstr = malloc((str_size) + 1)})
 #define str_free(string) (free((string).cstr))
 
-#define string_join(...)  (string_join_("",__VA_ARGS__, str_null))
+#define string_join(...)  (string_join_(str(""),__VA_ARGS__, str_null))
 #define string_path(...)  (string_join_(str(PATH_SEPARATOR_STR),__VA_ARGS__, str_null))
 #define string_join_sep(separator, ...)  (string_join_((separator),__VA_ARGS__, str_null))
 
@@ -596,6 +597,10 @@ void str_temp_free(string_temp_t temp){
     }
     list_free(temp);
 }
+
+
+
+
 
 
 #endif 
