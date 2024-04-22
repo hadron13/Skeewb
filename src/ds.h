@@ -56,7 +56,7 @@ typedef struct {
 
 
 
-void *list__init(size_t element_size){
+static void *list__init(size_t element_size){
     list_header_t *header = malloc(element_size + sizeof(list_header_t));
     if(header == NULL)
         return NULL;
@@ -65,7 +65,7 @@ void *list__init(size_t element_size){
     return (void*)(header + 1);
 }
 
-void *list__resize(void *list, size_t element_size, size_t new_ammount) {
+static void *list__resize(void *list, size_t element_size, size_t new_ammount) {
     list_header(list)->capacity = new_ammount;
     return (list_header_t*)realloc(list_header(list), (element_size * new_ammount) + sizeof(list_header_t)) + 1;
 }
@@ -169,6 +169,7 @@ static uint64_t   hash64_delete(hash64_t *hash_table, uint64_t key);
 static void       hash64_destroy(hash64_t *hash_table);
 
 
+
 static int32_t msi_lookup(uint64_t hash, int exp, int32_t idx){
     uint32_t mask = ((uint32_t)1 << exp) - 1;
     uint32_t step = (hash >> (64 - exp)) | 1;
@@ -185,7 +186,7 @@ static uint64_t fnv1a_hash(const unsigned char *data, size_t length){
     return hash;
 }
 
-uint32_t lowbias32(uint32_t x){
+static uint32_t lowbias32(uint32_t x){
     x ^= x >> 16;
     x *= 0x7feb352dU;
     x ^= x >> 15;
@@ -194,7 +195,7 @@ uint32_t lowbias32(uint32_t x){
     return x;
 }
 
-const char *STR_HASH_GRAVESTONE = "\xff anti-cien tech";
+static const char *STR_HASH_GRAVESTONE = (const char*)UINTPTR_MAX;
 
 static str_hash_t str_hash_create(size_t initial_exponent){
     size_t initial_size = 1 << initial_exponent;
@@ -305,10 +306,8 @@ static hash32_t hash32_create(size_t initial_exponent){
     return hash_table;
 }
 
-size_t total_collisions = 0;
 
 static void hash32_resize(hash32_t *hash_table, size_t new_exponent){
-    // total_collisions = 0;
     size_t old_size = 1 << hash_table->exponent;
 
     hash32_t new_hash = hash32_create(new_exponent);
@@ -336,7 +335,6 @@ static void hash32_insert(hash32_t *hash_table, uint32_t key, uint32_t value){
         index = msi_lookup(hash, hash_table->exponent, index);
 
         if(hash_table->keys[index] < HASH32_GRAVESTONE && hash_table->keys[index] != key){
-            total_collisions++;
             continue;
         }
 
@@ -498,22 +496,22 @@ typedef struct{
 #define string_path(...)  (string_join_(str(PATH_SEPARATOR_STR),__VA_ARGS__, str_null))
 #define string_join_sep(separator, ...)  (string_join_((separator),__VA_ARGS__, str_null))
 
-string_t string_join_(string_t separator, ...);
-string_t string_dup(string_t string);
-string_t string_dup_len(string_t string, size_t length);
-bool     string_equal(string_t a, string_t b);
-string_t string_get_ext(string_t filename);
-string_t string_get_path(string_t filename);
+static string_t string_join_(string_t separator, ...);
+static string_t string_dup(string_t string);
+static string_t string_dup_len(string_t string, size_t length);
+static bool     string_equal(string_t a, string_t b);
+static string_t string_get_ext(string_t filename);
+static string_t string_get_path(string_t filename);
 
 typedef string_t* string_temp_t;
 
-string_t str_temp(string_temp_t *temp, string_t string);
-void     str_temp_free(string_temp_t temp);
+static string_t str_temp(string_temp_t *temp, string_t string);
+static void     str_temp_free(string_temp_t temp);
 #define  str_temp_join(temp, ...) (str_temp(temp, string_join_(str(""),__VA_ARGS__, str_null)))
 
 
 
-string_t string_join_(string_t separator, ...){
+static string_t string_join_(string_t separator, ...){
     va_list args;
     va_start(args, separator);
     
@@ -544,24 +542,24 @@ string_t string_join_(string_t separator, ...){
     return joined_string;
 }
 
-string_t string_dup(string_t string){
+static string_t string_dup(string_t string){
     string_t duplicated = str_alloc(string.length);
     memcpy(duplicated.cstr, string.cstr, string.length + 1);
     return duplicated;
 }
 
-string_t string_dup_len(string_t string, size_t length){
+static string_t string_dup_len(string_t string, size_t length){
     string_t duplicated = str_alloc(string.length);
     memcpy(duplicated.cstr, string.cstr, length + 1);
     return duplicated;
 }
 
-bool string_equal(string_t a, string_t b){
+static bool string_equal(string_t a, string_t b){
     return a.length == b.length && memcmp(a.cstr, b.cstr, a.length) == 0;
 }
 
 
-string_t string_get_ext(string_t filename){
+static string_t string_get_ext(string_t filename){
     if(!filename.cstr)
         return str_null;
     char *last_point= strrchr(filename.cstr, '.');
@@ -571,7 +569,7 @@ string_t string_get_ext(string_t filename){
 }
 
 
-string_t string_get_path(string_t filename){
+static string_t string_get_path(string_t filename){
     if(!filename.cstr)
         return str_null;
     
@@ -586,21 +584,17 @@ string_t string_get_path(string_t filename){
 }
 
 
-string_t str_temp(string_temp_t *arena, string_t str){
+static string_t str_temp(string_temp_t *arena, string_t str){
     list_push(*arena, str);
     return str;
 }
 
-void str_temp_free(string_temp_t temp){
+static void str_temp_free(string_temp_t temp){
     for(size_t i = 0; i < list_size(temp); i++){
         str_free(temp[i]);
     }
     list_free(temp);
 }
-
-
-
-
 
 
 #endif 

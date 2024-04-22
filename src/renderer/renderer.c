@@ -1,32 +1,39 @@
-#include "renderer.h"
+
 #include <SDL3/SDL.h>
 #include <glad/glad.h>
 #include <stdlib.h>
 
 #define MODULE "Renderer"
 #include "../skeewb.h"
-
+#include "renderer.h"
 
 
 SDL_Window *window;
 SDL_GLContext *gl_context;
+core_interface_t *core;
+
+void start(core_interface_t *);
+void loop(core_interface_t *);
+void quit(core_interface_t *);
+
+
+
+shader_t *renderer_shader_compile(resource_t vertex, resource_t fragment);
+void      renderer_shader_use(shader_t *shader);
 
 
 
 
-void start(core_interface_t *core);
-void loop(core_interface_t *core);
-void quit(core_interface_t *core);
+renderer_interface_t renderer = {
+    .shader_compile = renderer_shader_compile,
+    .shader_use = renderer_shader_use,
+};
 
 
 
+module_desc_t load(core_interface_t *core_interface){
 
-
-
-
-
-
-module_desc_t load(core_interface_t *core){
+    core = core_interface;
     core->console_log(INFO, "starting renderer");
 
     SDL_GL_SetAttribute( SDL_GL_CONTEXT_MAJOR_VERSION, 4 );
@@ -46,7 +53,7 @@ module_desc_t load(core_interface_t *core){
     return (module_desc_t){
         .modid = str("renderer"),
         .version = {0, 0, 1},
-        .interface = NULL,
+        .interface = &renderer,
     };
 }
 
@@ -84,13 +91,8 @@ void start(core_interface_t *core){
 
     resource_t vertex_resource = core->resource_load(str("vert"), str("renderer/shaders/test_vert.glsl"));
     resource_t fragment_resource = core->resource_load(str("frag"), str("renderer/shaders/test_frag.glsl"));
-
-    string_t vertex_source = core->resource_string(vertex_resource);
-    string_t fragment_source = core->resource_string(fragment_resource);
-
-    core->console_log(DEBUG, "%s", vertex_source.cstr);
-    core->console_log(DEBUG, "%s", fragment_source.cstr);
-
+    
+    shader_t *shader = renderer_shader_compile(vertex_resource, fragment_resource);
 
 }
 

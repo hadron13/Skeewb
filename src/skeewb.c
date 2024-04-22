@@ -434,7 +434,7 @@ string_t core_resource_string(resource_t resource){
     fread(string.cstr, file_size, 1, resource.file);
 
     string.cstr[file_size] = 0;
-
+    
     return string;
 }
 

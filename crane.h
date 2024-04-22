@@ -337,8 +337,13 @@ bool copy(string_t source, string_t destination){
     str_free(command);
     return status;
     #elif defined(WINDOWS)
+    crane_log(INFO, "copying %s to %s", source.cstr, destination.cstr);
     
-    MoveFileA(old_path.cstr, new_path.cstr);
+    bool status = CopyFileA(source.cstr, destination.cstr, false);
+    if(!status){
+        crane_log(ERROR, "cannot copy '%s' to '%s'  %s", source.cstr, destination.cstr, GetLastErrorAsString());
+    }
+    return status;
 
     #endif
 }

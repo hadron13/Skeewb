@@ -79,7 +79,9 @@ int main(int argc, char **argv){
     
     compile(str("build"_"skeewb" EXEC_EXT),                      str(CFLAGS),            str("src"_"skeewb.c") );
     compile(str("intermediates"_"glad.o"),                       str("-c -fPIC" CFLAGS), str("src"_"libs"_"glad"_"src"_"glad.c"));
-    compile(str("build"_"mods"_"renderer"_"renderer" DYLIB_EXT), str(RENDERER_FLAGS),    str("src"_"renderer"_"renderer.c"), str("intermediates"_"glad.o"));
+
+    compile(str("build"_"mods"_"renderer"_"renderer" DYLIB_EXT), str(RENDERER_FLAGS),    
+            str("src"_"renderer"_"renderer.c"), str("src"_"renderer"_"shader.c"), str("intermediates"_"glad.o"));
     
     string_t source = str("src"_"renderer"_"shaders");
     string_t *shaders = enumerate_directory(source, false);
@@ -90,11 +92,9 @@ int main(int argc, char **argv){
         copy(temp_path(&temp, source, shaders[i]), temp_path(&temp, destination, shaders[i]));
     }
     
-    if(strcmp(argv[1], "run") == 0){
+    if(argc > 1 && strcmp(argv[1], "run") == 0){
         crane_log(INFO, "running");
         system("build"_"skeewb" EXEC_EXT);
     }
-
-
     str_temp_free(temp);
 }

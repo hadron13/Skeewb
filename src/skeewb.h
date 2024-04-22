@@ -104,7 +104,7 @@ typedef struct{
     config_t     (*config_get)(const string_t name);                                    // retrieves a configuration
     resource_t   (*resource_load)(const string_t name, const string_t path);            // loads a new resource, if already loaded, retrieves resource
     resource_t   (*resource_overload)(const string_t name, const string_t new_path);    // overloads existing resource
-    string_t     (*resource_string)(resource_t resource);                               // reads resource file into a buffer
+    string_t     (*resource_string)(resource_t resource);                               // reads resource file into a string
 }core_interface_t;
 
 
