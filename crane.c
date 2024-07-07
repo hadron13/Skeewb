@@ -1,6 +1,16 @@
 #include"crane.h"
-#include<locale.h>
- 
+
+//////////////////////////////////////////////
+//                                          // 
+// //===\\ ||==\\      /\    ||\  || ====== //
+// ||      ||   ||    //\\   ||\\ || ||     //
+// ||      ||==\\    //  \\  || \\|| ||===  //
+// ||      ||   \\  //====\\ ||  \\| ||     //
+// \\===// ||   || //      \\||   || ====== //
+//                                          // 
+//      Cheap Shellscript held by Tape      //
+//                                          //
+//////////////////////////////////////////////
 
 #ifndef RPATH
 #   ifdef UNIX
@@ -57,13 +67,52 @@ int main(int argc, char **argv){
     if(!system(0)){
         crane_log(CRITICAL, "huh where shell");
         exit(-1);
-    } 
+    }
+
     rebuild(argc, argv);
     string_temp_t temp = list_init(string_t);
     
-    if(argc > 1 && strcmp(argv[1], "rebuild") == 0){
+    if(argc > 1 && strcmp(argv[1], "example") == 0){
+        crane_log(INFO, "creating example mod");
+
+        make_directory(str("examplemod"));
+        make_directory(str("examplemod/src"));
+        make_directory(str("examplemod/skeewb"));
+
+        copy(str("crane.h"), str("examplemod/crane.h"));
+
+        FILE *crane_c = fopen("examplemod/crane.c", "w");
+        string_t code = str("#include\"crane.h\"\n\n"
+                            "int main(int argc, char **argv){\n\t"
+                            "if(!system(0))exit(-1);\n\n\t"
+                            "rebuild(argc, argv);\n\t"
+                            "make_directory(str(\"build\"));\n\t" 
+                            "make_directory(str(\"build/mods\"));\n\t" 
+                            "make_directory(str(\"build/mods/examplemod\"));\n\t" 
+                            "compile(str(\"build/mods/examplemod/examplemod" DYLIB_EXT "\"), str(\"-fPIC -shared -I.\"), str(\"src/examplemod.c\"));\n}"); 
         
+        fwrite(code.cstr, code.length, 1, crane_c);
+        fclose(crane_c);
+        
+        FILE *examplemod_c = fopen("examplemod/src/examplemod.c", "w");
+        code = str("#include<skeewb/skeewb.h>\n\n"
+                   "module_desc_t load(core_interface_t *core){\n\t"
+                   "core->console_log(INFO, \"super cool mod\");\n\n\t"
+                   "return (module_desc_t){.modid = str(\"examplemod\"), .version = {0, 0, 1}};\n}"); 
+        
+        fwrite(code.cstr, code.length, 1, examplemod_c);
+        fclose(examplemod_c);
+
+        copy(str("src/ds.h"), str("examplemod/skeewb/ds.h"));
+        copy(str("src/skeewb.h"), str("examplemod/skeewb/skeewb.h"));
+        copy(str("src/renderer/renderer.h"), str("examplemod/skeewb/renderer.h"));
+       
+        exit(0);
+        
+
     }
+
+    
 
     make_directory(str("build"));
     make_directory(str("intermediates"));

@@ -398,7 +398,8 @@ int rebuild_(char *source, int argc, char **argv){
     if(is_file_older_than(executable, source_file)){
         crane_log(INFO, "rebuilding...");
         compile(executable, str("-g"), source_file);
-        system(executable.cstr);
+        string_t command = string_join_sep(str(" "), executable, (argc>1)? str(argv[1]) : str_null);
+        system(command.cstr);
         exit(0);
     }
     return 0;

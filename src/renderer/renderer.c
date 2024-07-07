@@ -49,7 +49,6 @@ module_desc_t load(core_interface_t *core_interface){
         core->console_log(ERROR, "could not start SDL, SDL error %s", SDL_GetError());
         core->quit(-1);
     }
-
     core->console_log(INFO, "telecoteco");
 
     core->event_listen(str("start"), (event_callback_t)start);
@@ -266,6 +265,7 @@ void loop(core_interface_t *core){
     }
     
     
+    SDL_GL_SwapWindow(window);
 
     struct {
         mat4 mvp;
