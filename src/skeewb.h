@@ -46,19 +46,17 @@ typedef void shared_object_t;
 typedef void function_pointer_t;
 typedef void interface_t;
 
-#ifndef CORE
-typedef void module_t;
-typedef void event_t;
-#endif
+struct module_t;
+struct event_t;
 
 #include "ds.h"
 
 
 typedef void(*event_callback_t)(void *context);
 
-typedef enum {ERROR, DEBUG, VERBOSE, INFO, WARNING, CRITICAL } log_category_t;
+typedef enum { CRITICAL, ERROR, WARNING, INFO, VERBOSE, DEBUG} log_category_t;
 
-typedef enum { EMPTY, BOOLEAN, INTEGER, REAL, STRING } config_type_t;
+typedef enum { EMPTY, TYPE_BOOLEAN, TYPE_INTEGER, TYPE_REAL, TYPE_STRING } config_type_t;
 
 typedef struct{
     uint16_t major;
@@ -73,7 +71,7 @@ typedef struct{
 }module_desc_t;
 
 typedef union{
-    bool      boolean;
+    bool      TYPE_BOOLEAN;
     int64_t  integer;
     double   real;
     string_t string;
@@ -94,26 +92,33 @@ typedef struct{
 
 typedef struct{
     version_t version;
-
-    void         (*console_log)(log_category_t category, char *restrict format, ...);   // printf-like logging function
-    void         (*event_register)(const string_t name);                                // registers an event
-    void         (*event_trigger) (const string_t name, void *context);                 // triggers an event, calling all listening functions
-    void         (*event_listen)  (const string_t name, event_callback_t callback);     // register functions to listen to an event
-    void         (*quit)(int status);                                                   // engine shutdown, calls 'quit' event
-    void         (*config_set)(config_t config);                                        // sets a configuration
-    config_t     (*config_get)(const string_t name);                                    // retrieves a configuration
-    resource_t   (*resource_load)(const string_t name, const string_t path);            // loads a new resource, if already loaded, retrieves resource
-    resource_t   (*resource_overload)(const string_t name, const string_t new_path);    // overloads existing resource
-    string_t     (*resource_string)(resource_t resource);                               // reads resource file into a string
+    union{
+        void         (*console_log)(log_category_t category, char *restrict format, ...);   // printf-like logging function
+        void         (*console_log_)(log_category_t category, char *restrict format, ...);  // macro-less console_log
+    };
+    void             (*event_register)(const string_t name);                                // registers an event
+    void             (*event_trigger) (const string_t name, void *context);                 // triggers an event, calling all listening functions
+    void             (*event_listen)  (const string_t name, event_callback_t callback);     // register functions to listen to an event
+    void             (*quit)(int status);                                                   // engine shutdown, calls 'quit' event
+    void             (*config_set)(config_t config);                                        // sets a configuration
+    config_t         (*config_get)(const string_t name);                                    // retrieves a configuration
+    resource_t      *(*resource_load)(const string_t name, const string_t path);            // loads a new resource, if already loaded, retrieves resource
+    resource_t      *(*resource_overload)(const string_t name, const string_t new_path);    // overloads existing resource
+    string_t         (*resource_string)(resource_t *resource);                               // reads resource file into a string
+    version_t        (*module_get_version)(string_t modid);
+    interface_t      (*module_get_interface)(string_t modid);
+    function_pointer_t(*module_get_function)(string_t modid);
+    void             (*module_reload)(string_t modid);
 }core_interface_t;
 
 
+
+
 #ifndef MODULE 
-    #define MODULE ""
+#   define console_log(cat, fmt, ...) console_log(cat, "[\033[34m" __FILE__ ":\033[35m%d \033[93m%s()\033[0m] "fmt, __LINE__, __func__ __VA_OPT__(,) __VA_ARGS__)
+#else
+#   define console_log(cat, fmt, ...) console_log(cat, "[\033[34m" MODULE" | "__FILE__ ":\033[35m%d \033[93m%s()\033[0m] "fmt, __LINE__, __func__ __VA_OPT__(,) __VA_ARGS__)
 #endif
-
-#define console_log(cat, fmt, ...) console_log(cat, "[\033[34m" MODULE" | "__FILE__ ":\033[35m%d \033[93m%s()\033[0m] "fmt, __LINE__, __func__ __VA_OPT__(,) __VA_ARGS__)
-
 module_desc_t load(core_interface_t *core);
 
 #endif

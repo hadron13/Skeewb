@@ -125,8 +125,7 @@ void     str_temp_free(string_temp_t temp);
 string_t string_join_varargs(string_t separator, va_list args){
     va_list args_copy;
     va_copy(args_copy, args);
-
-    
+ 
     size_t total_size = 0;
     string_t current_string = va_arg(args, string_t);
 
@@ -313,9 +312,11 @@ bool file_exists(string_t filename){
 
 bool move(string_t old_path, string_t new_path){
     #ifdef UNIX
+    crane_log(VERBOSE, "move %s => %s", old_path.cstr, new_path.cstr);
+
     int status = rename(old_path.cstr, new_path.cstr);
     if(status){
-        crane_log(ERROR, " '%s' to '%s'  %s", strerror(errno));
+        crane_log(ERROR, " %s", strerror(errno));
     }
     return status;
     #elif defined(WINDOWS)
@@ -328,24 +329,20 @@ bool move(string_t old_path, string_t new_path){
 
 bool copy(string_t source, string_t destination){
     #ifdef UNIX
-    string_t command = string_join_sep(str(" "), str("cp"), source, destination);
-    crane_log(INFO, "copying %s to %s with '%s'", source.cstr, destination.cstr, command.cstr);
+    string_t copy_command = str("cp");
+    #elif defined(WINDOWS)
+    string_t copy_command = str("copy");
+    #endif
+
+    string_t command = string_join_sep(str(" "), copy_command, source, destination);
+
+    crane_log(INFO, "copying %s => %s", source.cstr, destination.cstr);
     int status = system(command.cstr);
     if(status){
         crane_log(ERROR, " '%s' to '%s'  %s", strerror(errno));
     }
     str_free(command);
     return status;
-    #elif defined(WINDOWS)
-    crane_log(INFO, "copying %s to %s", source.cstr, destination.cstr);
-    
-    bool status = CopyFileA(source.cstr, destination.cstr, false);
-    if(!status){
-        crane_log(ERROR, "cannot copy '%s' to '%s'  %s", source.cstr, destination.cstr, GetLastErrorAsString());
-    }
-    return status;
-
-    #endif
 }
 
 

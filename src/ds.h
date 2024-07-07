@@ -32,36 +32,36 @@ typedef struct {
     size_t size, capacity;
 } list_header_t;
 
-#define list_header(l)  ((list_header_t *)(l) - 1)
+#define list_header(list)  ((list_header_t *)(list) - 1)
 
-#define list_size(l)    ((l) ? list_header(l)->size : 0)
-#define list_capacity(l)((l) ? list_header(l)->capacity : 0)
-#define list_full(l)    (list_size(l) == list_capacity(l))
-#define list_init(t)    (list__init(sizeof(t)))
-#define list_free(l)    (free(list_header(l)))
+#define list_size(list)    ((list) ? list_header(list)->size : 0)
+#define list_capacity(list)((list) ? list_header(list)->capacity : 0)
+#define list_full(list)    (list_size(list) == list_capacity(list))
+#define list_init(t)    (list__init(sizeof(t), 1))
+#define list_alloc(t, c)(list__init(sizeof(t), c))
+#define list_free(list)    (free(list_header(list)))
 
-#define list_push(l, e) (  (l) = (!l)? list_init(*l) : \
-                         list_full(l)? list__resize((l), sizeof(*l),list_capacity(l)*2):\
-                                        (l),\
-                         (l)[list_header(l)->size++] = (e))
+#define list_push(list, e) (  (list) = (!list)? list_init(*list) : \
+                         list_full(list)? list__resize((list), sizeof(*list),list_capacity(list)*2):\
+                                        (list),\
+                         (list)[list_header(list)->size++] = (e))
 
-#define list_pop(l)     (list_header(l)->size--, (l) = (list_size(l) <= list_capacity(l) / 2)?\
-                         list__resize((l), sizeof(*l), list_capacity(l)/2) : (l))
+#define list_pop(list)     (list_header(list)->size--, (list) = (list_size(list) <= list_capacity(list) / 2)?\
+                         list__resize((list), sizeof(*list), list_capacity(list)/2) : (list))
 
-#define list_swap_delete(l, i)((l)[i] = (l)[list_size(l) - 1], list_pop(l))
+#define list_swap_delete(list, i)((list)[i] = (list)[list_size(list) - 1], list_pop(list))
 
-#define list_join(l1, l2) (l1 = list__join(l1, l2, sizeof(*l1)), assert(sizeof(*(l1))==sizeof(*(l2))) )
+#define list_join(list1, list2) (list1 = list__join(list1, list2, sizeof(*list1)), assert(sizeof(*(list1))==sizeof(*(list2))) )
 
-#define list_resize(l, s)(l = list__resize(l, sizeof(*(l)), s))
+#define list_resize(list, s)(list = list__resize(list, sizeof(*(list)), s))
 
 
-
-static void *list__init(size_t element_size){
-    list_header_t *header = malloc(element_size + sizeof(list_header_t));
+static void *list__init(size_t element_size, size_t elements){
+    list_header_t *header = malloc(element_size * elements + sizeof(list_header_t));
     if(header == NULL)
         return NULL;
     header->size = 0;
-    header->capacity = 1;
+    header->capacity = elements;
     return (void*)(header + 1);
 }
 
@@ -119,7 +119,7 @@ static void *list__join(void *list1, void *list2, size_t element_size){
 typedef struct{
     size_t length;
     size_t exponent;
-    // size_t tombstones;
+    size_t tombstones;
     char **keys;
     uint64_t *values;
 }str_hash_t;
@@ -127,7 +127,7 @@ typedef struct{
 typedef struct{
     size_t length;
     size_t exponent;
-    // size_t tombstones;
+    size_t tombstones;
     uint32_t *keys;
     uint32_t *values;
 }hash32_t;
@@ -135,7 +135,7 @@ typedef struct{
 typedef struct{
     size_t length;
     size_t exponent;
-    // size_t tombstones;
+    size_t tombstones;
     uint64_t *keys;
     uint64_t *values;
 }hash64_t;
@@ -153,6 +153,7 @@ static void       str_hash_insert(str_hash_t *restrict hash_table, const char *r
 static uint64_t   str_hash_lookup(str_hash_t *restrict hash_table, const char *restrict key);
 static uint64_t   str_hash_delete(str_hash_t *restrict hash_table, const char *restrict key);
 static void       str_hash_destroy(str_hash_t *hash_table);
+static void       str_hash_print(str_hash_t *hash_table);
 
 static hash32_t   hash32_create(size_t initial_exponent);
 static void       hash32_resize(hash32_t *hash_table, size_t new_exponent);
@@ -202,12 +203,13 @@ static str_hash_t str_hash_create(size_t initial_exponent){
     str_hash_t hash_table = {
         .length   = 0, 
         .exponent = initial_exponent,
+        .tombstones = 0,
         .keys   = calloc(initial_size, sizeof (char*)),
         .values = malloc(initial_size * sizeof (uint64_t*))
     };
 
     if(hash_table.keys == NULL || hash_table.values == NULL)
-        return (str_hash_t){.exponent = 0, .length = 0, .keys = NULL, .values = NULL};
+        return (str_hash_t){.exponent = 0, .tombstones = 0, .length = 0, .keys = NULL, .values = NULL};
     
     return hash_table;
 }
@@ -230,7 +232,8 @@ static void str_hash_resize(str_hash_t *hash_table, size_t new_exponent){
 
 static void str_hash_insert(str_hash_t *restrict hash_table, const char * restrict key, uint64_t value){    
 
-    if(hash_table->length + 1  == (1 << hash_table->exponent) - ((1 << hash_table->exponent) >> 1) ){
+    if(hash_table->length + 1  == (1 << hash_table->exponent) - ((1 << hash_table->exponent) >> 1) || 
+        hash_table->tombstones > hash_table->length >> 2){
         str_hash_resize(hash_table, hash_table->exponent + 1);
     }
 
@@ -255,15 +258,18 @@ static uint64_t str_hash_lookup(str_hash_t * restrict hash_table, const char *re
         index = msi_lookup(hash, hash_table->exponent, index);
         
         if(hash_table->keys[index] == NULL)
-            return UINT64_MAX;
+            return STR_HASH_MISSING;
+        if(hash_table->keys[index] == STR_HASH_GRAVESTONE)
+            continue;
 
-        if(strcmp(hash_table->keys[index], key) != 0){
+        if(hash_table->keys[index][0] != key[0] || strcmp(hash_table->keys[index], key) != 0){
             continue;
         }
         
         return hash_table->values[index];
     }
 }
+
 static uint64_t str_hash_delete(str_hash_t * restrict hash_table, const char *restrict key){
     uint64_t hash = fnv1a_hash((unsigned char*)key, strlen(key));
     for(int32_t index = hash;;){
@@ -276,6 +282,7 @@ static uint64_t str_hash_delete(str_hash_t * restrict hash_table, const char *re
             continue;
         }
         hash_table->keys[index] = (char*)STR_HASH_GRAVESTONE;
+        hash_table->tombstones++;
         return hash_table->values[index];
     }
 }
@@ -287,6 +294,16 @@ static void str_hash_destroy(str_hash_t *hash_table){
     free(hash_table->values);
 }
 
+static void str_hash_print(str_hash_t *hash_table){
+    for(size_t i = 0; i < (1 << hash_table->exponent); i++){
+        if(hash_table->keys[i] == NULL || hash_table->keys[i] == STR_HASH_GRAVESTONE)
+            return;
+        printf("%s - %lu\n", hash_table->keys[i], hash_table->values[i]);
+    }
+}
+
+
+
 #define HASH32_GRAVESTONE (UINT32_MAX-1)
 
 static hash32_t hash32_create(size_t initial_exponent){
@@ -294,6 +311,7 @@ static hash32_t hash32_create(size_t initial_exponent){
     hash32_t hash_table = {
         .length   = 0, 
         .exponent = initial_exponent,
+        .tombstones = 0,
         .keys   = malloc(initial_size * sizeof (*hash_table.keys)),
         .values = malloc(initial_size * sizeof (*hash_table.values))
     };
@@ -301,7 +319,7 @@ static hash32_t hash32_create(size_t initial_exponent){
     memset(hash_table.keys, 0xff, initial_size * sizeof(*hash_table.keys));
 
     if(hash_table.keys == NULL || hash_table.values == NULL)
-        return (hash32_t){0, 0, NULL, NULL};
+        return (hash32_t){0, 0, 0, NULL, NULL};
     
     return hash_table;
 }
@@ -323,7 +341,8 @@ static void hash32_resize(hash32_t *hash_table, size_t new_exponent){
 }
 
 static void hash32_insert(hash32_t *hash_table, uint32_t key, uint32_t value){
-    if(hash_table->length + 1 == (size_t)((1 << hash_table->exponent) * 0.6f)){
+    if(hash_table->length + 1 == (size_t)((1 << hash_table->exponent) * 0.6f) ||
+        hash_table->tombstones > hash_table->length >> 2){
         hash32_resize(hash_table, hash_table->exponent + 1);
     }
     
@@ -352,7 +371,7 @@ static uint32_t hash32_lookup(hash32_t *hash_table, uint32_t key){
         index = msi_lookup(hash, hash_table->exponent, index);
         
         if(hash_table->keys[index] == UINT32_MAX)
-            return 0;
+            return HASH32_MISSING;
         if(hash_table->keys[index] != key || hash_table->keys[index] == HASH32_GRAVESTONE)
             continue;
         
@@ -372,7 +391,7 @@ static uint32_t hash32_delete(hash32_t *hash_table, uint32_t key){
             continue;
         
         hash_table->keys[index] = HASH32_GRAVESTONE;
-
+        hash_table->tombstones++;
         return hash_table->values[index];
     }
 }
@@ -399,7 +418,7 @@ static hash64_t hash64_create(size_t initial_exponent){
     memset(hash_table.keys, 0xff, initial_size * sizeof(*hash_table.keys));
 
     if(hash_table.keys == NULL || hash_table.values == NULL)
-        return (hash64_t){0, 0, NULL, NULL};
+        return (hash64_t){0, 0, 0, NULL, NULL};
     
     return hash_table;
 }
@@ -421,7 +440,8 @@ static void hash64_resize(hash64_t *hash_table, size_t new_exponent){
 }
 
 static void hash64_insert(hash64_t *hash_table, uint64_t key, uint64_t value){
-        if(hash_table->length + 1 == 1 << hash_table->exponent){
+    if(hash_table->length + 1 == 1 << hash_table->exponent ||
+        hash_table->tombstones > hash_table->length >> 2){
         hash64_resize(hash_table, hash_table->exponent + 1);
     }
 
@@ -446,7 +466,7 @@ static uint64_t hash64_lookup(hash64_t *hash_table, uint64_t key){
         index = msi_lookup(hash, hash_table->exponent, index);
         
         if(hash_table->keys[index] == UINT64_MAX)
-            return UINT64_MAX;
+            return HASH64_MISSING;
         if(hash_table->keys[index] != key || hash_table->keys[index] == HASH64_GRAVESTONE)
             continue;
         
@@ -464,12 +484,13 @@ static uint64_t hash64_delete(hash64_t *hash_table, uint64_t key){
         if(hash_table->keys[index] != key || hash_table->keys[index] == HASH64_GRAVESTONE)
             continue;
         hash_table->keys[index] = HASH64_GRAVESTONE;
-        
+        hash_table->tombstones++;
         return hash_table->values[index];
     }
 }
 
 static void hash64_destroy(hash64_t *hash_table){
+    hash_table->tombstones = 0;
     hash_table->length = 0;
     hash_table->exponent = 0;
     free(hash_table->keys);
@@ -486,6 +507,11 @@ typedef struct{
     size_t length;
     char  *cstr;
 }string_t;
+
+typedef struct{
+    const size_t length;
+    const char  *cstr;
+}const_string_t;
 
 #define str(cstring) ((string_t){.length = strlen(cstring), .cstr = (cstring)})
 #define str_null     ((string_t){.length = 0, .cstr = NULL})
@@ -518,8 +544,9 @@ static string_t string_join_(string_t separator, ...){
     size_t total_size = 0;
     string_t current_string = va_arg(args, string_t);
 
-    for(;current_string.cstr != NULL; current_string = va_arg(args, string_t)){
+    while(current_string.cstr != NULL){
         total_size += current_string.length + separator.length; 
+        current_string = va_arg(args, string_t);
     }
     total_size -= separator.length;
     va_end(args);
@@ -544,13 +571,15 @@ static string_t string_join_(string_t separator, ...){
 
 static string_t string_dup(string_t string){
     string_t duplicated = str_alloc(string.length);
-    memcpy(duplicated.cstr, string.cstr, string.length + 1);
+    memcpy(duplicated.cstr, string.cstr, string.length);
+    duplicated.cstr[string.length] = '\0';
     return duplicated;
 }
 
 static string_t string_dup_len(string_t string, size_t length){
     string_t duplicated = str_alloc(string.length);
-    memcpy(duplicated.cstr, string.cstr, length + 1);
+    memcpy(duplicated.cstr, string.cstr, length);
+    duplicated.cstr[length] = '\0';
     return duplicated;
 }
 
@@ -574,15 +603,22 @@ static string_t string_get_path(string_t filename){
         return str_null;
     
     char *last_slash = strrchr(filename.cstr, PATH_SEPARATOR);
+#   ifdef WINDOWS
+    char *alt_slash = strrchr(filename.cstr, '/');
+    if(alt_slash && alt_slash > last_slash){
+        last_slash = alt_slash;
+    }
+#   endif
     
     if(!last_slash)
         return filename;
-    return string_dup((string_t){
+    return string_dup_len((string_t){
         .cstr = filename.cstr,
         .length = last_slash - filename.cstr
-    });
+    }, last_slash - filename.cstr);
 }
 
+        
 
 static string_t str_temp(string_temp_t *arena, string_t str){
     list_push(*arena, str);

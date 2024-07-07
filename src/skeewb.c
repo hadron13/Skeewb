@@ -39,12 +39,11 @@
 //thank you microsoft
 #undef interface
 #undef ERROR
-#define BOOLEAN BOOLEAN_
 
 #endif
 
 #define ICE_CPU_IMPL
-#include "ice_cpu.h"
+#include "libs/ice_cpu.h"
 #include "ds.h"
 #include "skeewb.h"
 
@@ -100,14 +99,15 @@ config_t core_config_get(const string_t name);
 
 
 //  ===== RESOURCES ====
-
-resource_t  core_resource_load(const string_t name, const string_t path);
-resource_t  core_resource_overload(const string_t name, const string_t new_path);
-string_t    core_resource_string(resource_t resource);
+resource_t *core_resource_load(const string_t name, const string_t path);
+resource_t *core_resource_overload(const string_t name, const string_t new_path);
+string_t    core_resource_string(resource_t *resource);
 
 
 //  ====== MODULES =====
-
+version_t          module_get_version(string_t modid);
+interface_t        module_get_interface(string_t modid);
+function_pointer_t module_get_function(string_t modid);
 
 //  ===== LOGGING ======
 void core_log_(log_category_t category, char *restrict format, ...);
@@ -115,8 +115,12 @@ void core_log_(log_category_t category, char *restrict format, ...);
 
 
 //  ======= MISC =======
-void    parse_argument(char *arg);
-bool    version_valid(version_t version, version_t min, version_t max);
+void     parse_argument(char *arg);
+bool     version_valid(version_t version, version_t min, version_t max);
+#ifdef WINDOWS
+LPSTR GetLastErrorAsString(void);
+#endif
+
 
 
 //  ===== PLATFORM =====
@@ -177,8 +181,8 @@ string_t current_directory;
  *   ||   ||    || ||      ||     ||     ||    || ||     ||  \\|    ||  //====\\  ||      ||   ||     || ||  \\|
  * ====== ||    || ||      ====== ====== ||    || ====== ||   ||    || //      \\ ||    ======  \\===//  ||   ||
  */
-
 int main(int argc, char **argv) {
+    
     atexit(cleanup);
 
     modules   = list_init(module_t);
@@ -194,17 +198,26 @@ int main(int argc, char **argv) {
     
 
     FILE  *config_file = fopen("config.txt", "r");
-    if(!config_file){
+    if(config_file){
         core_log(INFO, "reading config file");
-        // TODO: read config file
+        char config_line[256];
+        while(fgets(config_line, 256, config_file)){
+            core_log(DEBUG, "%s", config_line);
+        }
     }
+    
 
     #ifdef WINDOWS
-    if(SetDllDirectoryA("build\\mods\\libs") == 0){
-        core_log(ERROR, "could not add dll directory with error %i", GetLastError());
-    }
-    #endif
+    {
+        char path_buffer[256];
+        GetModuleFileNameA(NULL, path_buffer, 256);
 
+        current_directory = string_get_path(str(path_buffer));
+        ShowWindow(GetConsoleWindow(), SW_HIDE);
+    }
+    #elif defined(UNIX)
+    current_directory = string_get_path(str(argv[0]));
+    #endif
 
     if(argc > 1){
         core_log(INFO, "parsing arguments");
@@ -219,6 +232,7 @@ int main(int argc, char **argv) {
         }
     }
 
+
     ice_cpu_info cpu_info;
     ice_cpu_get_info(&cpu_info);
     core_log(INFO, "CPU: %s", cpu_info.name);
@@ -226,7 +240,7 @@ int main(int argc, char **argv) {
     
     core_config_set((config_t){
         .name = str("cpu_cores"),
-        .type = INTEGER,
+        .type = TYPE_INTEGER,
         .value = cpu_info.cores,
     }); 
     
@@ -234,8 +248,7 @@ int main(int argc, char **argv) {
     core_event_register(str("loop"));
     core_event_register(str("quit"));
 
-
-    current_directory = string_get_path(str(argv[0]));
+    str_hash_print(&event_hashtable);
 
     string_temp_t temp = list_init(string_t);
 
@@ -250,9 +263,6 @@ int main(int argc, char **argv) {
         
         string_t mod_path = string_path(mod_directory, mod_names[i], str_temp_join(&temp, mod_names[i], str(DYLIB_EXTENSION)) );
         str_temp(&temp, mod_path);
-        
-        // if(!string_equal(str_temp(&temp, string_get_ext(mod_path)), str(DYLIB_EXTENSION)))
-        //     continue;
 
         core_log(INFO, "path %s", mod_path.cstr);
         core_log(INFO, "loading %s", mod_names[i].cstr);
@@ -300,7 +310,7 @@ void cleanup(void){
     
     for(size_t i = 0; i < list_size(configs); i++){
         str_free(configs[i].name);
-        if(configs[i].type == STRING)
+        if(configs[i].type == TYPE_STRING)
             str_free(configs[i].value.string);
     }
 
@@ -322,7 +332,7 @@ void cleanup(void){
 }
 
 void core_quit(int status){
-    core_log(INFO, "quitting with status %d...", status);
+    core_log(INFO, "quitting with status %d ...", status);
     core_event_trigger(str("quit"), &core_interface);
     exit(status);
 }
@@ -331,10 +341,11 @@ void core_quit(int status){
 
 void core_event_register(const string_t name){
     event_t event = {
-        string_dup(name),
+        string_dup(name), 
         list_init(event_callback_t)
     };
     list_push(events, event);
+
     str_hash_insert(&event_hashtable, event.name.cstr, list_size(events) - 1);
 }
 
@@ -361,33 +372,32 @@ void core_event_listen(const string_t name, event_callback_t callback){
 
 // ===== ===== Configs ===== =====
 
-void core_config_set(config_t config){
-
+void core_config_set(config_t config){ 
     size_t index = str_hash_lookup(&config_hashtable, config.name.cstr);
 
     if(index == STR_HASH_MISSING){
         config_t copy = {
             .name = string_dup(config.name),
             .type = config.type,
-            .value = config.type == STRING? (config_value_t){.string = string_dup(config.value.string)} : config.value
+            .value = config.type == TYPE_STRING? (config_value_t){.string = string_dup(config.value.string)} : config.value
         };
         list_push(configs, copy);
         str_hash_insert(&config_hashtable, copy.name.cstr, list_size(configs) - 1);
         return;
     }
-    if(configs[index].type == STRING){
+    if(configs[index].type == TYPE_STRING){
         str_free(configs[index].value.string);
     }
 
     configs[index].type = config.type;
-    configs[index].value = config.type == STRING? (config_value_t){.string = string_dup(config.value.string)} : config.value;
+    configs[index].value = config.type == TYPE_STRING? (config_value_t){.string = string_dup(config.value.string)} : config.value;
 }
 
 config_t core_config_get(const string_t name){
     uint64_t index = str_hash_lookup(&config_hashtable, name.cstr);
     
     if(index == STR_HASH_MISSING){
-        return (config_t){.name = str("empty"), .type = EMPTY, .value.integer = 0 };
+        return (config_t){.name = str("empty"), .type = EMPTY, .value.integer= 0 };
     }
     return configs[index];
 }
@@ -395,7 +405,7 @@ config_t core_config_get(const string_t name){
 
 // ===== ==== Resources ==== =====
 
-resource_t core_resource_load(const string_t name, const string_t path){
+resource_t *core_resource_load(const string_t name, const string_t path){
     size_t index = str_hash_lookup(&resource_hashtable, name.cstr);
     string_t full_path = string_path(current_directory, str("mods"), path);
 
@@ -407,31 +417,31 @@ resource_t core_resource_load(const string_t name, const string_t path){
         };
         if(resource.file == NULL){
             core_log(ERROR, "could not load resource '%s' at %s", name.cstr, path.cstr);
-            return (resource_t){.name = str_null, .path = str_null, .file = NULL};
+            return NULL;
         }
         core_log(INFO, "loaded resource '%s' at %s", name.cstr, path.cstr);
 
         list_push(resources, resource);
         str_hash_insert(&resource_hashtable, resource.name.cstr, list_size(resources) - 1);
-        return resource;
+        return &resources[list_size(resources) - 1];
     }
     core_log(INFO, "retrieved resource '%s' at %s", name.cstr, path.cstr);
-    return resources[index];
+    return &resources[index];
 }
 
-resource_t core_resource_overload(const string_t name, const string_t new_path){
-    return (resource_t){.name = str_null, .path = str_null, .file = NULL};
+resource_t *core_resource_overload(const string_t name, const string_t new_path){
+    return NULL;
 }
 
-string_t core_resource_string(resource_t resource){
-    if (resource.file == NULL) return str_null;
+string_t core_resource_string(resource_t *resource){
+    if (resource->file == NULL) return str_null;
 
-    fseek(resource.file, 0, SEEK_END);
-    size_t file_size = ftell(resource.file);
-    fseek(resource.file, 0, SEEK_SET);  
+    fseek(resource->file, 0, SEEK_END);
+    size_t file_size = ftell(resource->file);
+    fseek(resource->file, 0, SEEK_SET);  
 
     string_t string = str_alloc(file_size);
-    fread(string.cstr, file_size, 1, resource.file);
+    fread(string.cstr, file_size, 1, resource->file);
 
     string.cstr[file_size] = 0;
     
@@ -448,12 +458,12 @@ void parse_argument(char *arg){
     if(!first_equal){ 
         core_config_set((config_t){
             .name = str(arg),
-            .type = BOOLEAN,
-            .value.boolean = true
+            .type = TYPE_BOOLEAN,
+            .value.TYPE_BOOLEAN = true
         });
         return; 
     }   
-    size_t name_length = first_equal - arg; 
+    size_t name_length = first_equal - arg -1; 
     size_t value_length = strlen(first_equal) - 1;
     
     if(name_length == 0){
@@ -469,23 +479,25 @@ void parse_argument(char *arg){
     string_t value = string_dup_len(str(first_equal + 1), value_length); 
     
     config_t config_entry = {.name = name};
+
+    
     
     if(string_equal(value, str("true"))){
-        config_entry.type = BOOLEAN;
-        config_entry.value.boolean = true;
+        config_entry.type = TYPE_BOOLEAN;
+        config_entry.value.TYPE_BOOLEAN = true;
     }else if(string_equal(value, str("false"))){
-        config_entry.type = BOOLEAN;
-        config_entry.value.boolean = false;
+        config_entry.type = TYPE_BOOLEAN;
+        config_entry.value.TYPE_BOOLEAN = false;
     }else if(isdigit(value.cstr[0])){
         if(strchr(value.cstr, '.') == NULL){
-            config_entry.type = INTEGER;
+            config_entry.type = TYPE_INTEGER;
             config_entry.value.integer = atoi(value.cstr);
         }else{
-            config_entry.type = REAL;
+            config_entry.type = TYPE_REAL;
             config_entry.value.real = atof(value.cstr);
         } 
     }else{
-        config_entry.type = STRING;
+        config_entry.type = TYPE_STRING;
         config_entry.value.string = value;
     }
     core_config_set(config_entry);
@@ -515,7 +527,6 @@ string_t *platform_enumerate_directory(string_t directory_path, bool directories
         return NULL;
     }
     string_t *file_list = list_init(string_t);
-    core_log(DEBUG, "%i", list_size(file_list));
 
 #ifdef UNIX
     DIR *directory = opendir(directory_path.cstr);
@@ -572,9 +583,15 @@ shared_object_t *platform_library_load(string_t path) {
             core_log(ERROR, "loaded %s with error %s", path.cstr, dlerror());
         }
     #elif defined(WINDOWS)
+        string_t dll_directory = string_get_path(path);
+        if(SetDllDirectoryA(dll_directory.cstr) == 0){
+            core_log(ERROR, "could not set dll directory with error %i", GetLastError());
+        }
+        str_free(dll_directory);
+
         obj = LoadLibraryA(path.cstr);
         if(obj == NULL){
-            core_log(ERROR, "loaded %s with error %i", path.cstr, GetLastError());
+            core_log(ERROR, "loaded %s with error %i %s", path.cstr, GetLastError(), GetLastErrorAsString());
         }
     #endif 
     return obj;
@@ -619,3 +636,27 @@ void core_log_(log_category_t category, char *restrict format, ...){
     va_end(args);
     fputs("\n", output_file);
 }
+
+#ifdef WINDOWS 
+LPSTR GetLastErrorAsString(void){
+    // https://stackoverflow.com/questions/1387064/how-to-get-the-error-message-from-the-error-code-returned-by-getlasterror
+
+    DWORD errorMessageId = GetLastError();
+    assert(errorMessageId != 0);
+
+    LPSTR messageBuffer = NULL;
+
+    DWORD size =
+        FormatMessage(
+            FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, // DWORD   dwFlags,
+            NULL, // LPCVOID lpSource,
+            errorMessageId, // DWORD   dwMessageId,
+            MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), // DWORD   dwLanguageId,
+            (LPSTR) &messageBuffer, // LPTSTR  lpBuffer,
+            0, // DWORD   nSize,
+            NULL // va_list *Arguments
+        );
+    
+    return messageBuffer;
+}
+#endif
