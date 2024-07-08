@@ -71,7 +71,7 @@ typedef struct{
 }module_desc_t;
 
 typedef union{
-    bool      TYPE_BOOLEAN;
+    bool     boolean;
     int64_t  integer;
     double   real;
     string_t string;
@@ -106,8 +106,8 @@ typedef struct{
     resource_t      *(*resource_overload)(const string_t name, const string_t new_path);    // overloads existing resource
     string_t         (*resource_string)(resource_t *resource);                               // reads resource file into a string
     version_t        (*module_get_version)(string_t modid);
-    interface_t      (*module_get_interface)(string_t modid);
-    function_pointer_t(*module_get_function)(string_t modid);
+    interface_t     *(*module_get_interface)(string_t modid);
+    function_pointer_t(*module_get_function)(string_t modid, string_t name);
     void             (*module_reload)(string_t modid);
 }core_interface_t;
 

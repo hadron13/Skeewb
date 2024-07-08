@@ -204,8 +204,8 @@ static str_hash_t str_hash_create(size_t initial_exponent){
         .length   = 0, 
         .exponent = initial_exponent,
         .tombstones = 0,
-        .keys   = calloc(initial_size, sizeof (char*)),
-        .values = malloc(initial_size * sizeof (uint64_t*))
+        .keys   = calloc(initial_size, sizeof (*hash_table.keys)),
+        .values = malloc(initial_size * sizeof (*hash_table.values))
     };
 
     if(hash_table.keys == NULL || hash_table.values == NULL)

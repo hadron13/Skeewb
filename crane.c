@@ -82,7 +82,8 @@ int main(int argc, char **argv){
         copy(str("crane.h"), str("examplemod/crane.h"));
 
         FILE *crane_c = fopen("examplemod/crane.c", "w");
-        string_t code = str("#include\"crane.h\"\n\n"
+        string_t code = str("#define MODULE \"Example\""
+                            "#include\"crane.h\"\n\n"
                             "int main(int argc, char **argv){\n\t"
                             "if(!system(0))exit(-1);\n\n\t"
                             "rebuild(argc, argv);\n\t"

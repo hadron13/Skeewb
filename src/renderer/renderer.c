@@ -37,8 +37,8 @@ void sokol_logger(const char* tag, uint32_t log_level, uint32_t log_item, const 
 }
 
 
-module_desc_t load(core_interface_t *core_interface){
-    core = core_interface;
+module_desc_t load(core_interface_t *core){
+    core = core;
     core->console_log(INFO, "starting renderer");
 
     SDL_GL_SetAttribute( SDL_GL_CONTEXT_MAJOR_VERSION, 3 );
@@ -201,7 +201,7 @@ void start(core_interface_t *core){
                 .source = fragment_source.cstr,
                 .images[0] = {.used = true, .image_type = SG_IMAGETYPE_2D, .sample_type = SG_IMAGESAMPLETYPE_FLOAT},
                 .samplers[0] = {.used = true, .sampler_type = SG_SAMPLERTYPE_FILTERING},
-                .image_sampler_pairs[0] = {.used = true, .image_slot = 0, .sampler_slot = 0, .glsl_name = "texture1"}
+                .image_sampler_pairs[0] = {.used = true, .image_slot = 0, .sampler_slot = 0, .glsl_name = "texture1"},
             },
         }),
         .layout = {
@@ -214,7 +214,7 @@ void start(core_interface_t *core){
         .primitive_type = SG_PRIMITIVETYPE_TRIANGLES,
         .index_type = SG_INDEXTYPE_UINT16,
         .cull_mode = SG_CULLMODE_BACK,
-        .depth = {
+        .depth = { 
             .compare = SG_COMPAREFUNC_LESS_EQUAL,
             .write_enabled = true,
         },
@@ -264,8 +264,6 @@ void loop(core_interface_t *core){
         }
     }
     
-    
-    SDL_GL_SwapWindow(window);
 
     struct {
         mat4 mvp;
@@ -298,7 +296,9 @@ void loop(core_interface_t *core){
 
 
     sg_apply_uniforms(SG_SHADERSTAGE_VS, 0, &SG_RANGE(uniforms));
+    
     sg_draw(0, 36, 1);
+
     sg_end_pass();
     sg_commit();
 

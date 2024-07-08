@@ -459,7 +459,7 @@ void parse_argument(char *arg){
         core_config_set((config_t){
             .name = str(arg),
             .type = TYPE_BOOLEAN,
-            .value.TYPE_BOOLEAN = true
+            .value.boolean = true
         });
         return; 
     }   
@@ -484,10 +484,10 @@ void parse_argument(char *arg){
     
     if(string_equal(value, str("true"))){
         config_entry.type = TYPE_BOOLEAN;
-        config_entry.value.TYPE_BOOLEAN = true;
+        config_entry.value.boolean = true;
     }else if(string_equal(value, str("false"))){
         config_entry.type = TYPE_BOOLEAN;
-        config_entry.value.TYPE_BOOLEAN = false;
+        config_entry.value.boolean = false;
     }else if(isdigit(value.cstr[0])){
         if(strchr(value.cstr, '.') == NULL){
             config_entry.type = TYPE_INTEGER;
