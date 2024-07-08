@@ -1,18 +1,34 @@
 # Skeewb
-> ## A minimalist, modular Game/engine with focus on flexibility and performance 
+> ## A minimalist, modular voxel game/engine with focus on flexibility and performance 
+
+# Modules
+
+The whole engine is split into different, swappable modules, which are libraries (.dll/.so) loaded at runtime by the core executable.
+
+Each Module can communicate with other modules by the core config/resource/event system and interfaces.
 # Compiling
+
+## Prerequisites
+- C compiler: gcc/clang/mingw-w64
+- Cmake
+- SDL required libraries (Linux)
+
 ## Linux (gcc/clang) / Windows (MinGW)
 ```bash
+git clone https://github.com/hadron13/Skeewb.git --recurse-submodules
+cd Skeewb
 gcc crane.c -o crane # clang works too 
-./crane               
+./crane              # may be .exe in Windows
 ```
 
-# Modding
+# Creating a module
+
+An example module can be created using the following commands:
 ```bash
 ./crane example
 cd examplemod
-gcc crane.c -o crane
+gcc crane.c -o crane # examplemod's own crane
 ./crane
 ```
-This will create and compile a simple example mod.
-Refer to the (not done yet!) documentation on modding.
+
+Check the [wiki](https://github.com/hadron13/Skeewb/wiki) for more information.
