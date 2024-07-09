@@ -335,11 +335,7 @@ bool copy(string_t source, string_t destination){
     #ifdef UNIX
     string_t command = string_join_sep(str(" "), str("cp"), source, destination);
     #elif defined(WINDOWS)
-<<<<<<< HEAD
-    string_t command = string_join_sep(str(" "), str("xcopy"), source, destination, str("/E /C /I"));
-=======
     string_t command = string_join_sep(str(" "), str("copy"), source, destination);
->>>>>>> 9cdedd7 (fix windows compiling)
     #endif
 
 
