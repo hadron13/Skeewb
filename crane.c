@@ -45,7 +45,7 @@
 #   ifdef WINDOWS 
 #       define SDL_FLAGS " -lmingw32 -lSDL3"
 #   else 
-#       define SDL_FLAGS " -lSDL3 "  
+#       define SDL_FLAGS " -lSDL3 -lGL "  
 #   endif
 #endif
 
@@ -60,7 +60,7 @@
 
 
 #ifndef RENDERER_FLAGS
-#   define RENDERER_FLAGS (MODULE_CFLAGS SDL_FLAGS " -lGL ")
+#   define RENDERER_FLAGS (MODULE_CFLAGS SDL_FLAGS )
 #endif
 
 int main(int argc, char **argv){
@@ -109,8 +109,6 @@ int main(int argc, char **argv){
         copy(str("src/renderer/renderer.h"), str("examplemod/skeewb/renderer.h"));
        
         exit(0);
-        
-
     }
 
     
@@ -153,7 +151,7 @@ int main(int argc, char **argv){
             str("src/renderer/renderer.c"));
     
     
-    copy(str("src/renderer/shaders/*"), str("build/mods/renderer/assets/shaders/"));
+    copy(str("src/renderer/assets/shaders/*"), str("build/mods/renderer/assets/shaders/"));
     
     if(argc > 1 && strcmp(argv[1], "run") == 0){
         crane_log(INFO, "running");

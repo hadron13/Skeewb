@@ -96,14 +96,13 @@ void start(core_interface_t *core){
     core->console_log(INFO, "OpenGL context created with success");
 
     SDL_GL_SetSwapInterval(-1);
-
     
     sg_setup(&(sg_desc){
         .logger = sokol_logger,
     });
 
-    resource_t *vertex_resource = core->resource_load(str("vert"), str("renderer/shaders/test_vert.glsl"));
-    resource_t *fragment_resource = core->resource_load(str("frag"), str("renderer/shaders/test_frag.glsl"));
+    resource_t *vertex_resource = core->resource_load(str("vert"), str("renderer/assets/shaders/test_vert.glsl"));
+    resource_t *fragment_resource = core->resource_load(str("frag"), str("renderer/assets/shaders/test_frag.glsl"));
 
     string_t vertex_source = core->resource_string(vertex_resource);
     string_t fragment_source = core->resource_string(fragment_resource);
@@ -276,6 +275,7 @@ void loop(core_interface_t *core){
     glm_mat4_identity(projection);
 
 
+    
     float t = ((float)SDL_GetTicks()/1000.0f);
 
     glm_perspective(glm_rad(90), (float)width/(float)height, 0.1f, 100.0f, projection);

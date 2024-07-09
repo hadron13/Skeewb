@@ -116,7 +116,6 @@ void core_log_(log_category_t category, char *restrict format, ...);
 
 //  ======= MISC =======
 void     parse_argument(char *arg);
-bool     version_valid(version_t version, version_t min, version_t max);
 #ifdef WINDOWS
 LPSTR GetLastErrorAsString(void);
 #endif
@@ -128,7 +127,6 @@ string_t             *platform_enumerate_directory(string_t directory_path, bool
 shared_object_t      *platform_library_load(string_t path);
 function_pointer_t   *platform_library_load_symbol(shared_object_t *object, string_t name);
 void                  platform_library_unload(shared_object_t *object);
-string_t              platform_get_cwd();
 
 
 //  ===== LIFETIME =====
@@ -430,7 +428,31 @@ resource_t *core_resource_load(const string_t name, const string_t path){
 }
 
 resource_t *core_resource_overload(const string_t name, const string_t new_path){
-    return NULL;
+    size_t index = str_hash_lookup(&resource_hashtable, name.cstr);
+    string_t full_path = string_path(current_directory, str("mods"), new_path);
+
+    resource_t resource = {
+        .name = string_dup(name),
+        .path = full_path,
+        .file = fopen(full_path.cstr, "rb")
+    };
+    if(resource.file == NULL){
+        core_log(ERROR, "could not load resource '%s' at %s", name.cstr, new_path.cstr);
+        return NULL;
+    }
+
+    if(index == STR_HASH_MISSING){
+        core_log(INFO, "loaded resource '%s' at %s", name.cstr, new_path.cstr);
+        list_push(resources, resource);
+        str_hash_insert(&resource_hashtable, resource.name.cstr, list_size(resources) - 1);
+        return &resources[list_size(resources) - 1];
+    }
+    core_log(INFO, "overloaded resource '%s' at %s", name.cstr, new_path.cstr);
+    str_free(resources[index].path);
+    fclose(resources[index].file);
+
+    resources[index].path = string_dup(new_path);
+
 }
 
 string_t core_resource_string(resource_t *resource){

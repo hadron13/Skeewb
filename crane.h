@@ -1,3 +1,5 @@
+
+#define _CRT_SECURE_NO_WARNINGS
 #include<stdint.h>
 #include<stdbool.h>
 #include<stdarg.h>
@@ -12,6 +14,8 @@
 #   define WINDOWS
 #elif defined(__unix__) || defined(__unix)
 #   define UNIX
+#else
+#   error "invalid platform"
 #endif
 
 #ifdef WINDOWS 
@@ -329,12 +333,11 @@ bool move(string_t old_path, string_t new_path){
 
 bool copy(string_t source, string_t destination){
     #ifdef UNIX
-    string_t copy_command = str("cp");
+    string_t command = string_join_sep(str(" "), str("cp"), source, destination);
     #elif defined(WINDOWS)
-    string_t copy_command = str("copy");
+    string_t command = string_join_sep(str(" "), str("xcopy"), source, destination, str("/E /C /I"));
     #endif
 
-    string_t command = string_join_sep(str(" "), copy_command, source, destination);
 
     crane_log(INFO, "copying %s => %s", source.cstr, destination.cstr);
     int status = system(command.cstr);
