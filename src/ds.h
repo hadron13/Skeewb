@@ -41,12 +41,12 @@ typedef struct {
 #define list_alloc(t, c)(list__init(sizeof(t), c))
 #define list_free(list)    (free(list_header(list)))
 
-#define list_push(list, e) (  (list) = (!list)? list_init(*list) : \
+#define list_push(list, e) (  (list) =  \
                          list_full(list)? list__resize((list), sizeof(*list),list_capacity(list)*2):\
                                         (list),\
                          (list)[list_header(list)->size++] = (e))
 
-#define list_pop(list)     (list_header(list)->size--, (list) = (list_size(list) <= list_capacity(list) / 2)?\
+#define list_pop(list)     (  list_header(list)->size--, (list) = (list_size(list) <= list_capacity(list) / 2)?\
                          list__resize((list), sizeof(*list), list_capacity(list)/2) : (list))
 
 #define list_swap_delete(list, i)((list)[i] = (list)[list_size(list) - 1], list_pop(list))
@@ -54,6 +54,8 @@ typedef struct {
 #define list_join(list1, list2) (list1 = list__join(list1, list2, sizeof(*list1)), assert(sizeof(*(list1))==sizeof(*(list2))) )
 
 #define list_resize(list, s)(list = list__resize(list, sizeof(*(list)), s))
+
+#define list_last(list)((list)[list_size(list) - 1])
 
 
 static void *list__init(size_t element_size, size_t elements){
@@ -597,6 +599,23 @@ static string_t string_get_ext(string_t filename){
     return string_dup(str(last_point));
 }
 
+static string_t string_get_filename_no_ext(string_t filename){
+    
+    char *last_slash = strrchr(filename.cstr, PATH_SEPARATOR);
+    if(!last_slash) last_slash = filename.cstr;
+    last_slash += 1;
+
+    char *filename_dot = strchr(last_slash, '.');
+    if(!filename_dot) filename_dot = filename.cstr + filename.length - 1;
+    return string_dup_len(
+        (string_t){
+            .cstr = last_slash,
+            .length = filename_dot - last_slash,
+        },
+        filename_dot - last_slash
+    );
+
+}
 
 static string_t string_get_path(string_t filename){
     if(!filename.cstr)

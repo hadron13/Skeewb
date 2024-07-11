@@ -106,11 +106,11 @@ typedef struct{
     config_t         (*config_get)(const string_t name);                                    // retrieves a configuration
     resource_t      *(*resource_load)(const string_t name, const string_t path);            // loads a new resource, if already loaded, retrieves resource
     resource_t      *(*resource_overload)(const string_t name, const string_t new_path);    // overloads existing resource
-    string_t         (*resource_string)(resource_t *resource);                               // reads resource file into a string
+    string_t         (*resource_string)(resource_t *resource);                              // reads resource file into a string
     version_t        (*module_get_version)(string_t modid);
     interface_t     *(*module_get_interface)(string_t modid);
-    function_pointer_t(*module_get_function)(string_t modid, string_t name);
-    void             (*module_reload)(string_t modid);
+    function_pointer_t  *(*module_get_function)(string_t modid, string_t name);
+    string_t        *(*list_directory)(string_t path, bool directories);
 }core_interface_t;
 
 
@@ -121,6 +121,8 @@ typedef struct{
 #else
 #   define console_log(cat, fmt, ...) console_log(cat, "[\033[34m" MODULE" | "__FILE__ ":\033[35m%d \033[93m%s()\033[0m] "fmt, __LINE__, __func__ __VA_OPT__(,) __VA_ARGS__)
 #endif
+#define module_reload(modid) event_trigger(str("module_reload"), &(modid))
+
 module_desc_t load(core_interface_t *core);
 
 #endif

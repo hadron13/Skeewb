@@ -242,7 +242,12 @@ void loop(core_interface_t *core){
     while(SDL_PollEvent(&event)){
         switch(event.type){
             case SDL_EVENT_QUIT:
-                core->quit(0); 
+                core->quit(0);
+            case SDL_EVENT_KEY_UP:
+                if(event.key.keysym.sym ==  SDLK_r){
+                    core->module_reload(str("renderer")); // obviously breaks everything xD
+                }
+                break;
             case SDL_EVENT_WINDOW_RESIZED:
                 SDL_GetWindowSize(window, &width, &height); 
                 break; 

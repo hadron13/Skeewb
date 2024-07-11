@@ -335,7 +335,14 @@ bool copy(string_t source, string_t destination){
     #ifdef UNIX
     string_t command = string_join_sep(str(" "), str("cp"), source, destination);
     #elif defined(WINDOWS)
-    string_t command = string_join_sep(str(" "), str("copy"), source, destination);
+
+    string_t win_source = string_dup(source);
+    for(int i = 0; i < win_source.length; i++) win_source.cstr[i] = (win_source.cstr[i] == '/')? '\\' : win_source.cstr[i];
+    
+    string_t win_dest = string_dup(source);
+    for(int i = 0; i < win_dest.length; i++) win_dest.cstr[i] = (win_dest.cstr[i] == '/')? '\\' : win_dest.cstr[i];
+
+    string_t command = string_join_sep(str(" "), str("copy"), win_source, win_dest);
     #endif
 
 
@@ -402,8 +409,7 @@ int rebuild_(char *source, int argc, char **argv){
         crane_log(INFO, "rebuilding...");
         compile(executable, str("-g"), source_file);
         string_t command = string_join_sep(str(" "), executable, (argc>1)? str(argv[1]) : str_null);
-        system(command.cstr);
-        exit(0);
+        exit(system(command.cstr));
     }
     return 0;
 #endif

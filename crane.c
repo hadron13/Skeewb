@@ -31,9 +31,9 @@
 
 #ifndef CFLAGS
 #   ifdef WINDOWS 
-#       define CFLAGS LIB INCLUDE " -g  " 
+#       define CFLAGS LIB INCLUDE " -g -rdynamic " 
 #   else 
-#       define CFLAGS LIB INCLUDE " -g " 
+#       define CFLAGS LIB INCLUDE " -g -rdynamic " 
 #   endif
 #endif 
 
@@ -152,10 +152,7 @@ int main(int argc, char **argv){
     
     
     copy(str("src/renderer/assets/shaders/*"), str("build/mods/renderer/assets/shaders/"));
+    copy(str("src/renderer/assets/textures/*"), str("build/mods/renderer/assets/textures/"));
     
-    if(argc > 1 && strcmp(argv[1], "run") == 0){
-        crane_log(INFO, "running");
-        system("build/skeewb" EXEC_EXT);
-    }
     str_temp_free(temp);
 }

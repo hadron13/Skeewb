@@ -5,6 +5,8 @@
 #include <string.h>
 #include <stdarg.h>
 #include <ctype.h>
+#include <signal.h>
+#include <time.h>
 // #include <threads.h>
 
 // pentagon, hexagon, MSVC's gon
@@ -25,8 +27,13 @@
 #define PATH_SEPARATOR_STR "/"
 #define DYLIB_EXTENSION ".so"
 #include <dirent.h>
-#include <dlfcn.h>
 #include <unistd.h>
+#include <execinfo.h>
+#define _GNU_SOURCE
+#define __USE_GNU 
+#include <dlfcn.h>
+#undef _GNU_SOURCE
+#undef __USE_GNU 
 #endif
 
 #ifdef WINDOWS
@@ -59,6 +66,7 @@
 
 typedef struct{
     string_t          name;
+    size_t           *modules;
     event_callback_t *callbacks;
 }event_t;
 
@@ -71,11 +79,9 @@ typedef struct{
 }module_t;
 
 typedef struct{
-    char *dependent;
-    char *modid;
-    version_t min;
-    version_t max;
-}module_requirement_t;
+    size_t index;
+    void * context;
+}event_trigger_t;
 
 
 typedef module_desc_t(*start_func_t)(core_interface_t *interface);
@@ -105,9 +111,10 @@ string_t    core_resource_string(resource_t *resource);
 
 
 //  ====== MODULES =====
-version_t          module_get_version(string_t modid);
-interface_t        module_get_interface(string_t modid);
-function_pointer_t module_get_function(string_t modid);
+version_t            core_module_get_version(string_t modid);
+interface_t         *core_module_get_interface(string_t modid);
+function_pointer_t  *core_module_get_function(string_t modid, string_t function);
+void                 core_module_reload(void *data);
 
 //  ===== LOGGING ======
 void core_log_(log_category_t category, char *restrict format, ...);
@@ -115,7 +122,10 @@ void core_log_(log_category_t category, char *restrict format, ...);
 
 
 //  ======= MISC =======
-void     parse_argument(char *arg);
+size_t function_owner(function_pointer_t *function_pointer);
+void   parse_argument(char *arg);
+void   segfault(int sig);
+
 #ifdef WINDOWS
 LPSTR GetLastErrorAsString(void);
 #endif
@@ -123,7 +133,7 @@ LPSTR GetLastErrorAsString(void);
 
 
 //  ===== PLATFORM =====
-string_t             *platform_enumerate_directory(string_t directory_path, bool directories); // returns dynamic array of strings
+string_t             *platform_list_directory(string_t directory_path, bool directories); // returns dynamic array of strings
 shared_object_t      *platform_library_load(string_t path);
 function_pointer_t   *platform_library_load_symbol(shared_object_t *object, string_t name);
 void                  platform_library_unload(shared_object_t *object);
@@ -153,6 +163,10 @@ core_interface_t core_interface = {
     .resource_load = core_resource_load,
     .resource_overload = core_resource_overload,
     .resource_string = core_resource_string,
+    .module_get_version = core_module_get_version,
+    .module_get_interface = core_module_get_interface,
+    .module_get_function = core_module_get_function,
+    .list_directory = platform_list_directory
 };
 
 
@@ -161,6 +175,7 @@ module_t *modules;
 
 str_hash_t event_hashtable;
 event_t *events;
+event_trigger_t *event_bus;
 
 str_hash_t config_hashtable;
 config_t *configs;
@@ -171,6 +186,7 @@ resource_t *resources;
 string_t current_directory;
 
 
+size_t function_owner(function_pointer_t *function_pointer);
 
 /*
  * ====== ||\  /|| ||==\\  ||     ====== ||\  /|| ====== ||\  || ========  /\  ======== ======  //===\\  ||\  ||
@@ -181,12 +197,16 @@ string_t current_directory;
  */
 int main(int argc, char **argv) {
     
+
     atexit(cleanup);
 
-    modules   = list_init(module_t);
-    events    = list_init(event_t);
-    configs   = list_init(config_t);
-    resources = list_init(resource_t);
+    signal(SIGSEGV, segfault);
+
+    modules     = list_init(module_t);
+    events      = list_init(event_t);
+    event_bus = list_init(event_trigger_t);
+    configs     = list_init(config_t);
+    resources   = list_init(resource_t);
     module_hashtable    = str_hash_create(5);
     event_hashtable     = str_hash_create(8);
     config_hashtable    = str_hash_create(8);
@@ -215,6 +235,8 @@ int main(int argc, char **argv) {
     }
     #elif defined(UNIX)
     current_directory = string_get_path(str(argv[0]));
+    void *buf[1];
+    backtrace(buf, 0); // just to load libgcc
     #endif
 
     if(argc > 1){
@@ -246,6 +268,10 @@ int main(int argc, char **argv) {
     core_event_register(str("loop"));
     core_event_register(str("quit"));
 
+    core_event_register(str("module_reload"));
+    core_event_listen(str("module_reload"), core_module_reload);
+
+
     str_hash_print(&event_hashtable);
 
     string_temp_t temp = list_init(string_t);
@@ -253,14 +279,13 @@ int main(int argc, char **argv) {
     string_t mod_directory = str_temp(&temp, string_path( current_directory, str("mods")));
     
     core_log(INFO, "mod directory: %s", mod_directory.cstr);
-    string_t *mod_names = platform_enumerate_directory(mod_directory, true); 
+    string_t *mod_names = platform_list_directory(mod_directory, true); 
     
     for(size_t i = 0; i < list_size(mod_names); i++){
         if(string_equal(mod_names[i], str("libs")))
             continue;
         
         string_t mod_path = string_path(mod_directory, mod_names[i], str_temp_join(&temp, mod_names[i], str(DYLIB_EXTENSION)) );
-        str_temp(&temp, mod_path);
 
         core_log(INFO, "path %s", mod_path.cstr);
         core_log(INFO, "loading %s", mod_names[i].cstr);
@@ -281,15 +306,29 @@ int main(int argc, char **argv) {
             .version = descriptor.version,
             .interface = descriptor.interface,
             .shared_object = mod_so, 
+            .path = mod_path
         }));
+        size_t index = list_size(modules) - 1;
+        str_hash_insert(&module_hashtable, modules[index].name.cstr, index);
     }     
     
     list_free(mod_names);
     str_temp_free(temp);
 
+
+
     core_event_trigger(str("start"), &core_interface);
     while(1){
         core_event_trigger(str("loop"), &core_interface);
+
+        for(size_t i = 0; i < list_size(event_bus); i++){
+            event_trigger_t trigger = event_bus[i];
+
+            for(size_t j = 0; j < list_size(events[trigger.index].callbacks); j++){
+                events[trigger.index].callbacks[j](trigger.context);
+            }
+        }
+        list_header(event_bus)->size = 0;
     }
 
     return 0;
@@ -298,6 +337,7 @@ int main(int argc, char **argv) {
 void cleanup(void){
     for(size_t i = 0; i < list_size(modules); i++){
         str_free(modules[i].name);
+        str_free(modules[i].path);
         platform_library_unload(modules[i].shared_object);
     }
 
@@ -339,8 +379,9 @@ void core_quit(int status){
 
 void core_event_register(const string_t name){
     event_t event = {
-        string_dup(name), 
-        list_init(event_callback_t)
+        .name = string_dup(name), 
+        .modules = list_init(size_t),
+        .callbacks = list_init(event_callback_t),
     };
     list_push(events, event);
 
@@ -353,9 +394,10 @@ void core_event_trigger (const string_t name, void *context){
         core_log(WARNING, "unknown event: %s", name.cstr);
         return;
     }
-    for(size_t i = 0; i < list_size(events[index].callbacks); i++){
-        events[index].callbacks[i](context);
-    }
+    list_push(event_bus, ((event_trigger_t){
+        .context = context,
+        .index = index,
+    }));
 }
 
 void core_event_listen(const string_t name, event_callback_t callback){
@@ -365,6 +407,7 @@ void core_event_listen(const string_t name, event_callback_t callback){
         core_log(WARNING, "unknown event: %s", name.cstr);
         return;
     }
+    list_push(events[index].modules, function_owner(callback));
     list_push(events[index].callbacks, callback);
 }
 
@@ -452,7 +495,7 @@ resource_t *core_resource_overload(const string_t name, const string_t new_path)
     fclose(resources[index].file);
 
     resources[index].path = string_dup(new_path);
-
+    return &resources[index];
 }
 
 string_t core_resource_string(resource_t *resource){
@@ -470,10 +513,118 @@ string_t core_resource_string(resource_t *resource){
     return string;
 }
 
+// ===== ======== Modules ======== =====
 
+version_t core_module_get_version(string_t modid){
+    size_t index = str_hash_lookup(&module_hashtable, modid.cstr);
+    if(index == STR_HASH_MISSING){
+        core_log(WARNING, "missing mod '%s'", modid.cstr);
+        return (version_t){0, 0, 0};
+    }
+
+    return modules[index].version;
+}
+
+interface_t *core_module_get_interface(string_t modid){
+    size_t index = str_hash_lookup(&module_hashtable, modid.cstr);
+    if(index == STR_HASH_MISSING){
+        core_log(WARNING, "missing mod '%s'", modid.cstr);
+        return NULL;
+    }
+
+    return modules[index].interface;
+}
+
+function_pointer_t *core_module_get_function(string_t modid, string_t function){ 
+    size_t index = str_hash_lookup(&module_hashtable, modid.cstr);
+    if(index == STR_HASH_MISSING){
+        core_log(WARNING, "missing mod '%s'", modid.cstr);
+        return NULL;
+    }
+
+    return platform_library_load_symbol(modules[index].shared_object, function);
+}
+
+void core_module_reload(void *data){
+
+    string_t modid = *(string_t*)data;
+
+    size_t index = str_hash_lookup(&module_hashtable, modid.cstr);
+    if(index == STR_HASH_MISSING){
+        core_log(ERROR, "mod '%s' not present", modid.cstr);
+    } 
+    core_log(INFO, "reloading module '%s'", modid.cstr);
+
+    for(size_t i = 0; i < list_size(events); i++){
+        for(size_t j = 0; j < list_size(events[i].callbacks); j++){
+            if(events[i].modules[j] == index){
+                events[i].callbacks = NULL;
+                events[i].modules = 0;
+            }
+        }
+    }
+
+
+    module_t *reloaded_module = &modules[index];
+    
+    void(*prereload)(core_interface_t *);
+    module_desc_t(*reload)(core_interface_t *);
+
+    prereload = platform_library_load_symbol(reloaded_module->shared_object, str("prereload"));
+    if(prereload) prereload(&core_interface);
+
+    platform_library_unload(reloaded_module->shared_object);
+
+    reloaded_module->shared_object = platform_library_load(reloaded_module->path);
+    if(!reloaded_module->shared_object){
+        core_log(ERROR, "could not reload mod '%s', prepare for unforeseen consequences");
+        return;
+    }
+    
+    core_log(INFO, "module '%s' reloaded successfuly", modid.cstr);
+    reload = platform_library_load_symbol(reloaded_module->shared_object, str("reload"));
+    
+    if(!reload)
+        return;
+
+    module_desc_t new_descriptor = reload(&core_interface);
+
+    reloaded_module->version = new_descriptor.version;
+    reloaded_module->interface = new_descriptor.interface;
+
+}
 
 
 // ===== ===== Miscellaneous ===== =====
+
+size_t function_owner(function_pointer_t *function_pointer){
+    string_t module_name;
+
+    #ifdef UNIX 
+    
+    Dl_info info;
+    dladdr(function_pointer, &info);
+    
+    string_t owner_path = str((char*)info.dli_fname);
+    module_name = string_get_filename_no_ext(owner_path);
+
+    #elif defined(WINDOWS)
+
+
+    //TODO: get this working
+    HMODULE *module; 
+    GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, function_pointer, module);
+
+    //GetModuleFileNameA
+
+    #endif
+
+    size_t index = str_hash_lookup(&module_hashtable, module_name.cstr);
+    str_free(module_name);
+
+    return index;
+}
+
 
 void parse_argument(char *arg){
     char *first_equal = strchr(arg, '=');
@@ -527,6 +678,26 @@ void parse_argument(char *arg){
     str_free(value);
 }
 
+void segfault(int sig){
+    core_log(CRITICAL, "oh no! treat your memory better next time.");
+   
+    #ifdef UNIX
+
+    int pointer_number;
+    void *pointer_buffer[128];
+
+    pointer_number = backtrace(pointer_buffer, 128);
+    backtrace_symbols_fd(pointer_buffer, pointer_number, STDERR_FILENO);
+
+
+    #elif defined(WINDOWS)
+
+    #endif
+
+    abort();
+    
+}
+
 bool version_valid(version_t version, version_t min, version_t max){
 
     uint64_t version_mask = ((uint64_t)version.major << 32) + ((uint64_t)version.minor << 16) + version.patch; 
@@ -544,7 +715,7 @@ bool version_valid(version_t version, version_t min, version_t max){
 
 // ===== ===== Platform Abstraction ===== =====
 
-string_t *platform_enumerate_directory(string_t directory_path, bool directories) {
+string_t *platform_list_directory(string_t directory_path, bool directories) {
     if (directory_path.cstr == NULL) {
         return NULL;
     }
@@ -599,36 +770,39 @@ string_t *platform_enumerate_directory(string_t directory_path, bool directories
 
 shared_object_t *platform_library_load(string_t path) {
     shared_object_t *obj = NULL;
+    char *error = NULL;
     #ifdef UNIX    
-        obj = dlopen(path.cstr, RTLD_LAZY);
-        if(obj == NULL){
-            core_log(ERROR, "loaded %s with error %s", path.cstr, dlerror());
-        }
+        obj = dlopen(path.cstr, RTLD_NOW);
+        error = dlerror();
     #elif defined(WINDOWS)
         string_t dll_directory = string_get_path(path);
         if(SetDllDirectoryA(dll_directory.cstr) == 0){
-            core_log(ERROR, "could not set dll directory with error %i", GetLastError());
+            core_log(ERROR, "could not set dll directory with error %s", GetLastErrorAsString());
         }
         str_free(dll_directory);
 
         obj = LoadLibraryA(path.cstr);
-        if(obj == NULL){
-            core_log(ERROR, "loaded %s with error %i %s", path.cstr, GetLastError(), GetLastErrorAsString());
-        }
+        error = GetLastErrorAsString();
     #endif 
+    if(obj == NULL){
+        core_log(ERROR, "loaded %s with error %s", path.cstr, error);
+    }
     return obj;
 }
 
 function_pointer_t *platform_library_load_symbol(shared_object_t *object, string_t name) {
     function_pointer_t *function = NULL;
+    char *error = NULL;
     #ifdef UNIX
         function = dlsym(object, name.cstr);
+        error = dlerror();
     #elif defined(WINDOWS)
         function = (function_pointer_t*)GetProcAddress(object, name.cstr);
+        error = GetLastErrorAsString();
     #endif 
     
     if(function == NULL){
-        core_log(ERROR, "function not found: %s", name.cstr);
+        core_log(WARNING, "function not found: %s, error: %s", name.cstr, error);
     }
     return function;
 }
@@ -644,14 +818,22 @@ void platform_library_unload(shared_object_t *object) {
 void core_log_(log_category_t category, char *restrict format, ...){
     FILE *output_file = stderr; 
 
+
     switch(category){
-        case VERBOSE: fputs("[\033[34mVERBSE\033[0m]", output_file);break;         
-        case INFO:    fputs("[\033[34mINFO\033[0m]\t", output_file);break;         
-        case WARNING: fputs("[\033[93mWARN\033[0m]\t", output_file);break;
-        case ERROR:   fputs("[\033[31mERROR\033[0m]\t", output_file);break;
-        case CRITICAL:fputs("[\033[31mCRITICAL\033[0m]\t", output_file);break;
-        case DEBUG:   fputs("[\033[35mDEBUG\033[0m]\t", output_file);break;
+        case VERBOSE: fputs("[\033[34mVERBSE\033[0m][", output_file);break;         
+        case INFO:    fputs("[\033[34mINFO\033[0m]  [", output_file);break;         
+        case WARNING: fputs("[\033[93mWARN\033[0m]  [", output_file);break;
+        case ERROR:   fputs("[\033[31mERROR\033[0m] [", output_file);break;
+        case CRITICAL:fputs("[\033[31mCRTCAL\033[0m][", output_file);break;
+        case DEBUG:   fputs("[\033[35mDEBUG\033[0m] [", output_file);break;
     }
+    time_t current_time = time(NULL);
+    char time_buf[10];
+
+    strftime(time_buf, 10, "%T", localtime(&current_time));
+    fputs(time_buf, output_file);
+    fputs("] ", output_file);
+
     va_list args;
     va_start(args, format);
     vfprintf(output_file, format, args);
