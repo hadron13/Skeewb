@@ -499,6 +499,50 @@ static void hash64_destroy(hash64_t *hash_table){
     free(hash_table->values);
 }
 
+
+typedef struct{
+    uint8_t *start;
+    size_t size;
+    ptrdiff_t pointer;
+}arena_t;
+
+arena_t arena_create(size_t size);
+void    arena_destroy(arena_t *arena);
+void   *arena_alloc(arena_t *arena, size_t size);
+void   *arena_push(arena_t *arena, void *data, size_t size);
+
+arena_t arena_create(size_t size){
+    arena_t arena = {
+        .start = malloc(size),
+        .size = size,
+        .pointer = 0,
+    };
+    return arena; 
+}
+
+void arena_destroy(arena_t *arena){
+    free(arena->start);
+}
+
+void *arena_alloc(arena_t *arena, size_t size){
+    if(arena->pointer + size > arena->size){
+        return NULL;
+    }
+    arena->pointer += size;
+    return arena->start + arena->pointer - size;
+}
+
+void *arena_push(arena_t *arena, void *data, size_t size){
+    void *buffer = arena_alloc(arena, size);
+    memcpy(buffer, data, size);
+    return buffer;
+}
+
+
+
+
+
+
 #ifndef PATH_SEPARATOR
     #define PATH_SEPARATOR '/'
     #define PATH_SEPARATOR_STR "/"

@@ -120,6 +120,7 @@ int main(int argc, char **argv){
     make_directory(str("build/mods/renderer/assets/"));
     make_directory(str("build/mods/renderer/assets/shaders"));
     make_directory(str("build/mods/renderer/assets/textures")); 
+    make_directory(str("build/mods/world"));
 
     if(system("cmake" SILENCE) == 0 && !file_exists(str("build/mods/renderer/" SDL_DYLIB))){
 #       ifdef UNIX
@@ -149,6 +150,9 @@ int main(int argc, char **argv){
 
     compile(str("build/mods/renderer/renderer" DYLIB_EXT), str(RENDERER_FLAGS),    
             str("src/renderer/renderer.c"));
+    
+    compile(str("build/mods/world/world" DYLIB_EXT), str(MODULE_CFLAGS),    
+            str("src/world/world.c"));
     
     
     copy(str("src/renderer/assets/shaders/*"), str("build/mods/renderer/assets/shaders/"));
