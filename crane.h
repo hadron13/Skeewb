@@ -339,7 +339,7 @@ bool copy(string_t source, string_t destination){
     string_t win_source = string_dup(source);
     for(int i = 0; i < win_source.length; i++) win_source.cstr[i] = (win_source.cstr[i] == '/')? '\\' : win_source.cstr[i];
     
-    string_t win_dest = string_dup(source);
+    string_t win_dest = string_dup(destination);
     for(int i = 0; i < win_dest.length; i++) win_dest.cstr[i] = (win_dest.cstr[i] == '/')? '\\' : win_dest.cstr[i];
 
     string_t command = string_join_sep(str(" "), str("copy"), win_source, win_dest);
