@@ -263,7 +263,6 @@ int main(int argc, char **argv) {
         .type = TYPE_INTEGER,
         .value = cpu_info.cores,
     }); 
-    
     core_event_register(str("start"));
     core_event_register(str("loop"));
     core_event_register(str("quit"));
@@ -609,7 +608,7 @@ size_t function_owner(function_pointer_t *function_pointer){
     module_name = string_get_filename_no_ext(owner_path);
 
     #elif defined(WINDOWS)
-
+    return 0;
 
     //TODO: get this working
     HMODULE *module; 
@@ -771,6 +770,7 @@ string_t *platform_list_directory(string_t directory_path, bool directories) {
 shared_object_t *platform_library_load(string_t path) {
     shared_object_t *obj = NULL;
     char *error = NULL;
+
     #ifdef UNIX    
         obj = dlopen(path.cstr, RTLD_NOW);
         error = dlerror();
@@ -846,7 +846,8 @@ LPSTR GetLastErrorAsString(void){
     // https://stackoverflow.com/questions/1387064/how-to-get-the-error-message-from-the-error-code-returned-by-getlasterror
 
     DWORD errorMessageId = GetLastError();
-    assert(errorMessageId != 0);
+    if(errorMessageId == 0)
+        return "";
 
     LPSTR messageBuffer = NULL;
 

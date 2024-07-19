@@ -31,7 +31,7 @@
 
 #ifndef CFLAGS
 #   ifdef WINDOWS 
-#       define CFLAGS LIB INCLUDE " -g -rdynamic " 
+#       define CFLAGS LIB INCLUDE " -g " 
 #   else 
 #       define CFLAGS LIB INCLUDE " -g -rdynamic " 
 #   endif
@@ -60,7 +60,7 @@
 
 
 #ifndef RENDERER_FLAGS
-#   define RENDERER_FLAGS (MODULE_CFLAGS SDL_FLAGS )
+#   define RENDERER_FLAGS ( MODULE_CFLAGS SDL_FLAGS )
 #endif
 
 int main(int argc, char **argv){
