@@ -23,30 +23,30 @@
 #endif
 
 #ifdef UNIX
-#define PATH_SEPARATOR '/'
-#define PATH_SEPARATOR_STR "/"
-#define DYLIB_EXTENSION ".so"
-#include <dirent.h>
-#include <unistd.h>
-#include <execinfo.h>
-#define _GNU_SOURCE
-#define __USE_GNU 
-#include <dlfcn.h>
-#undef _GNU_SOURCE
-#undef __USE_GNU 
+#   define PATH_SEPARATOR '/'
+#   define PATH_SEPARATOR_STR "/"
+#   define DYLIB_EXTENSION ".so"
+#   include <dirent.h>
+#   include <unistd.h>
+#   include <execinfo.h>
+#   define _GNU_SOURCE
+#   define __USE_GNU 
+#   include <dlfcn.h>
+#   undef _GNU_SOURCE
+#   undef __USE_GNU 
 #endif
 
 #ifdef WINDOWS
-#define PATH_SEPARATOR '\\'
-#define PATH_SEPARATOR_STR "\\"
-#define DYLIB_EXTENSION ".dll"
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-
-//thank you microsoft
-#undef interface
-#undef ERROR
-
+#   define PATH_SEPARATOR '\\'
+#   define PATH_SEPARATOR_STR "\\"
+#   define DYLIB_EXTENSION ".dll"
+#   define WIN32_LEAN_AND_MEAN
+#   include <windows.h>
+#   ifdef STACKTRACE
+#       include <dbghelp.h>
+#   endif
+#   undef interface
+#   undef ERROR
 #endif
 
 #define ICE_CPU_IMPL
@@ -197,14 +197,14 @@ size_t function_owner(function_pointer_t *function_pointer);
  */
 int main(int argc, char **argv) {
     
-
     atexit(cleanup);
-
+#ifdef STACKTRACE
     signal(SIGSEGV, segfault);
+#endif
 
     modules     = list_init(module_t);
     events      = list_init(event_t);
-    event_bus = list_init(event_trigger_t);
+    event_bus   = list_init(event_trigger_t);
     configs     = list_init(config_t);
     resources   = list_init(resource_t);
     module_hashtable    = str_hash_create(5);
@@ -252,7 +252,6 @@ int main(int argc, char **argv) {
         }
     }
 
-
     ice_cpu_info cpu_info;
     ice_cpu_get_info(&cpu_info);
     core_log(INFO, "CPU: %s", cpu_info.name);
@@ -270,7 +269,6 @@ int main(int argc, char **argv) {
     core_event_register(str("module_reload"));
     core_event_listen(str("module_reload"), core_module_reload);
 
-
     str_hash_print(&event_hashtable);
 
     string_temp_t temp = list_init(string_t);
@@ -286,7 +284,6 @@ int main(int argc, char **argv) {
         
         string_t mod_path = string_path(mod_directory, mod_names[i], str_temp_join(&temp, mod_names[i], str(DYLIB_EXTENSION)) );
 
-        core_log(INFO, "path %s", mod_path.cstr);
         core_log(INFO, "loading %s", mod_names[i].cstr);
         shared_object_t *mod_so = platform_library_load(mod_path);
 
@@ -313,8 +310,6 @@ int main(int argc, char **argv) {
     
     list_free(mod_names);
     str_temp_free(temp);
-
-
 
     core_event_trigger(str("start"), &core_interface);
     while(1){
@@ -563,7 +558,6 @@ void core_module_reload(void *data){
         }
     }
 
-
     module_t *reloaded_module = &modules[index];
     
     void(*prereload)(core_interface_t *);
@@ -608,13 +602,13 @@ size_t function_owner(function_pointer_t *function_pointer){
     module_name = string_get_filename_no_ext(owner_path);
 
     #elif defined(WINDOWS)
-    return 0;
 
-    //TODO: get this working
-    HMODULE *module; 
-    GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, function_pointer, module);
+    HMODULE module; 
+    GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, function_pointer, &module);
 
-    //GetModuleFileNameA
+    char filename[MAX_PATH];
+    GetModuleFileNameA(module, filename, MAX_PATH);
+    module_name = string_get_filename_no_ext(str(filename));
 
     #endif
 
@@ -651,8 +645,6 @@ void parse_argument(char *arg){
     string_t value = string_dup_len(str(first_equal + 1), value_length); 
     
     config_t config_entry = {.name = name};
-
-    
     
     if(string_equal(value, str("true"))){
         config_entry.type = TYPE_BOOLEAN;
@@ -689,7 +681,31 @@ void segfault(int sig){
     backtrace_symbols_fd(pointer_buffer, pointer_number, STDERR_FILENO);
 
 
-    #elif defined(WINDOWS)
+    #elif defined(WINDOWS) && defined(STACKTRACE)
+
+        uint16_t frames;
+        void *stack[64];
+        SYMBOL_INFO *symbol;
+        HANDLE process;
+
+        process = GetCurrentProcess();
+
+        SymInitialize( process, NULL, TRUE );
+
+        frames               = CaptureStackBackTrace( 0, 100, stack, NULL );
+        symbol               = calloc( sizeof( SYMBOL_INFO ) + 256 * sizeof( char ), 1 );
+        symbol->MaxNameLen   = 255;
+        symbol->SizeOfStruct = sizeof( SYMBOL_INFO );
+
+        for(int i = 0; i < frames; i++ ){
+            SymFromAddr( process, ( DWORD64 )( stack[ i ] ), 0, symbol );
+
+            printf( "%i: %s - 0x%0X\n", frames - i - 1, symbol->Name, symbol->Address );
+        }
+
+        free( symbol );
+
+
 
     #endif
 

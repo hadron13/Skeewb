@@ -29,11 +29,11 @@
 #endif 
 
 
-#ifndef CFLAGS
+#ifndef CORE_CFLAGS
 #   ifdef WINDOWS 
-#       define CFLAGS LIB INCLUDE " -g " 
+#       define CORE_CFLAGS " -g -DSTACKTRACE -ldbghelp" 
 #   else 
-#       define CFLAGS LIB INCLUDE " -g -rdynamic " 
+#       define CORE_CFLAGS " -g -rdynamic " 
 #   endif
 #endif 
 
@@ -56,8 +56,6 @@
 #       define SDL_DYLIB "libSDL3.so.0"  
 #   endif
 #endif
-
-
 
 #ifndef RENDERER_FLAGS
 #   define RENDERER_FLAGS ( MODULE_CFLAGS SDL_FLAGS )
@@ -146,7 +144,7 @@ int main(int argc, char **argv){
         copy(str("src/libs/SDL/build/" SDL_DYLIB), str("build/mods/renderer/" SDL_DYLIB));    
     } 
     
-    compile(str("build/skeewb" EXEC_EXT), str(CFLAGS), str("src/skeewb.c") );
+    compile(str("build/skeewb" EXEC_EXT), str(CORE_CFLAGS), str("src/skeewb.c") );
 
     compile(str("build/mods/renderer/renderer" DYLIB_EXT), str(RENDERER_FLAGS),    
             str("src/renderer/renderer.c"));
