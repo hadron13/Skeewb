@@ -9,8 +9,9 @@ Each Module can communicate with other modules by the core config/resource/event
 # Compiling
 
 ## Prerequisites
-- C compiler: gcc/clang/mingw-w64
-- Cmake
+- C compiler: gcc/clang/[mingw-w64](https://github.com/niXman/mingw-builds-binaries/releases)
+- [Odin Compiler](https://github.com/odin-lang/Odin/releases/) (soon)
+- [Cmake](https://cmake.org/download/)
 - SDL required libraries (Linux)
 
 ## Linux (gcc/clang) / Windows (MinGW)
