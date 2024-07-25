@@ -152,7 +152,7 @@ void core_quit(int status);
  */
 
 core_interface_t core_interface = {
-    {0, 0, 1},
+    {0, 2, 1},
     .console_log = core_log_,
     .event_register = core_event_register,
     .event_trigger = core_event_trigger,
@@ -291,11 +291,11 @@ int main(int argc, char **argv) {
             core_log(ERROR, "could not load %s", mod_names[i].cstr);
             continue;
         }
-        start_func_t start = (start_func_t)platform_library_load_symbol(mod_so, str("load"));
-        if(!start)
+        start_func_t load = (start_func_t)platform_library_load_symbol(mod_so, str("load"));
+        if(!load)
             continue;
 
-        module_desc_t descriptor = start(&core_interface);
+        module_desc_t descriptor = load(&core_interface);
 
         list_push(modules, ((module_t){
             .name = string_dup(descriptor.modid),
@@ -338,6 +338,7 @@ void cleanup(void){
     for(size_t i = 0; i < list_size(events); i++){
         str_free(events[i].name);
         list_free(events[i].callbacks);
+        list_free(events[i].modules);
     }
     
     for(size_t i = 0; i < list_size(configs); i++){
@@ -493,7 +494,7 @@ resource_t *core_resource_overload(const string_t name, const string_t new_path)
 }
 
 string_t core_resource_string(resource_t *resource){
-    if (resource->file == NULL) return str_null;
+    if (resource->file == NULL || resource == NULL) return str_null;
 
     fseek(resource->file, 0, SEEK_END);
     size_t file_size = ftell(resource->file);

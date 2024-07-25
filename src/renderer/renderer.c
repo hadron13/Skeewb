@@ -49,7 +49,6 @@ module_desc_t load(core_interface_t *core){
         core->console_log(ERROR, "could not start SDL, SDL error %s", SDL_GetError());
         core->quit(-1);
     }
-    core->console_log(INFO, "telecoteco");
 
     core->event_listen(str("start"), (event_callback_t)start);
     core->event_listen(str("loop"), (event_callback_t)loop);

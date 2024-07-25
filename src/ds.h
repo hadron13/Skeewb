@@ -23,10 +23,37 @@
 #include <stdint.h>
 #include <string.h>
 #include <stdarg.h>
-#include <assert.h>
 #include <stddef.h>
 #include <stdbool.h>
 #include <stdio.h>
+
+#if !defined(WINDOWS) && !defined(UNIX)
+#   if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
+#       define WINDOWS
+#   elif defined(__unix__) || defined(__unix)
+#       define UNIX
+#   endif
+#endif
+
+#if defined(__clang__) || defined(__clang)
+#   define CLANG
+#elif defined(__MINGW32__)
+#   define MINGW
+#elif defined(__GNUC__)
+#   define GCC
+#elif defined(_MSC_VER)
+#   define MSVC
+#endif
+
+#ifdef GCC
+#define sk_assert(x) 
+#elif defined(CLANG)
+
+#else 
+
+#endif
+
+
 
 typedef struct {
     size_t size, capacity;
@@ -503,7 +530,7 @@ static void hash64_destroy(hash64_t *hash_table){
 typedef struct{
     uint8_t *start;
     size_t size;
-    ptrdiff_t pointer;
+    size_t pointer;
 }arena_t;
 
 arena_t arena_create(size_t size);
@@ -544,20 +571,15 @@ void *arena_push(arena_t *arena, void *data, size_t size){
 
 
 #ifndef PATH_SEPARATOR
-    #define PATH_SEPARATOR '/'
-    #define PATH_SEPARATOR_STR "/"
+#   define PATH_SEPARATOR '/'
+#   define PATH_SEPARATOR_STR "/"
 #endif 
 
 
 typedef struct{
-    size_t length;
     char  *cstr;
+    ptrdiff_t length;
 }string_t;
-
-typedef struct{
-    const size_t length;
-    const char  *cstr;
-}const_string_t;
 
 #define str(cstring) ((string_t){.length = strlen(cstring), .cstr = (cstring)})
 #define str_null     ((string_t){.length = 0, .cstr = NULL})

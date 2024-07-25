@@ -25,13 +25,6 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#if !defined(WINDOWS) && !defined(UNIX)
-#   if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
-#       define WINDOWS
-#   elif defined(__unix__) || defined(__unix)
-#       define UNIX
-#   endif
-#endif
 
 
 
@@ -52,6 +45,12 @@ struct module_t;
 struct event_t;
 
 #include "ds.h"
+
+#if defined(CLANG) || defined(GCC)
+#   define PRINT_ATTRIBUTE  __attribute__ ((format (printf, 2, 3)))
+#else 
+#   define PRINT_ATTRIBUTE 
+#endif 
 
 
 typedef void(*event_callback_t)(void *context);
@@ -95,21 +94,32 @@ typedef struct{
 typedef struct{
     version_t version;
     union{
-        void         (*console_log)(log_category_t category, char *restrict format, ...);   // printf-like logging function
-        void         (*console_log_)(log_category_t category, char *restrict format, ...);  // macro-less console_log
+        void         (*console_log)(log_category_t category, char *restrict format, ...) PRINT_ATTRIBUTE;   // printf-like logging function
+        void         (*console_log_)(log_category_t category, char *restrict format, ...) PRINT_ATTRIBUTE;  // macro-less console_log
     };
     void             (*event_register)(const string_t name);                                // registers an event
     void             (*event_trigger) (const string_t name, void *context);                 // triggers an event, calling all listening functions
     void             (*event_listen)  (const string_t name, event_callback_t callback);     // register functions to listen to an event
     void             (*quit)(int status);                                                   // engine shutdown, calls 'quit' event
-    void             (*config_set)(config_t config);                                        // sets a configuration
-    config_t         (*config_get)(const string_t name);                                    // retrieves a configuration
     resource_t      *(*resource_load)(const string_t name, const string_t path);            // loads a new resource, if already loaded, retrieves resource
     resource_t      *(*resource_overload)(const string_t name, const string_t new_path);    // overloads existing resource
     string_t         (*resource_string)(resource_t *resource);                              // reads resource file into a string
+    
+    void             (*config_set)  (config_t config);                      
+    config_t         (*config_get)  (string_t name);                     
+
+    // void             (*config_set_bool)  (string_t key, bool value);                      
+    // void             (*config_set_int)   (string_t key, int64_t value);                      
+    // void             (*config_set_real)  (string_t key, double value);                      
+    // void             (*config_set_string)(string_t key, string_t value);                      
+    // bool             (*config_get_bool)  (string_t key);
+    // int64_t          (*config_get_int)   (string_t key);
+    // double           (*config_get_real)  (string_t key);
+    // string_t         (*config_get_string)(string_t key);
+
     version_t        (*module_get_version)(string_t modid);
     interface_t     *(*module_get_interface)(string_t modid);
-    function_pointer_t  *(*module_get_function)(string_t modid, string_t name);
+    function_pointer_t*(*module_get_function)(string_t modid, string_t name);
     string_t        *(*list_directory)(string_t path, bool directories);
 }core_interface_t;
 

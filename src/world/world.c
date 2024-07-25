@@ -1,3 +1,4 @@
+#include "skeewb.h"
 #include "world_internal.h"
 
 
@@ -11,7 +12,6 @@ void quit(core_interface_t *);
 
 
 module_desc_t load(core_interface_t *core){
-
 
 
 
