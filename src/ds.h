@@ -201,20 +201,28 @@ static bool string_equal(string_t a, string_t b){
 static string_t string_get_ext(string_t filename){
     if(!filename.cstr)
         return str_null;
-    char *last_point= strrchr(filename.cstr, '.');
-    if(!last_point)
+    
+    char *last_point = filename.cstr + filename.length - 1;
+    while( *last_point != '.' && last_point != filename.cstr)
+        last_point--;
+
+    if(last_point == filename.cstr)
         return filename;
-    return string_dup(str(last_point));
+    return string_dup((string_t){.cstr = last_point, .length = last_point - filename.cstr});
 }
 
 static string_t string_get_filename_no_ext(string_t filename){
     
-    char *last_slash = strrchr(filename.cstr, PATH_SEPARATOR);
-    if(!last_slash) last_slash = filename.cstr;
+    char *last_slash = filename.cstr + filename.length;
+    while( *last_slash != PATH_SEPARATOR && last_slash != filename.cstr)
+        last_slash--;
+
     last_slash += 1;
 
-    char *filename_dot = strchr(last_slash, '.');
-    if(!filename_dot) filename_dot = filename.cstr + filename.length - 1;
+    char *filename_dot = last_slash;
+    while( *filename_dot != '.' && filename_dot != filename.cstr + filename.length - 1)
+        last_slash++;
+
     return string_dup_len(
         (string_t){
             .cstr = last_slash,
@@ -229,9 +237,14 @@ static string_t string_get_path(string_t filename){
     if(!filename.cstr)
         return str_null;
     
-    char *last_slash = strrchr(filename.cstr, PATH_SEPARATOR);
+    char *last_slash = filename.cstr + filename.length;
+    while( *last_slash != PATH_SEPARATOR && last_slash != filename.cstr)
+        last_slash--;
 #   ifdef WINDOWS
-    char *alt_slash = strrchr(filename.cstr, '/');
+    char *alt_slash = filename.cstr + filename.length;
+    while( *alt_slash != '/'&& last_slash != filename.cstr)
+        alt_slash--;
+
     if(alt_slash && alt_slash > last_slash){
         last_slash = alt_slash;
     }
