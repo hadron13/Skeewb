@@ -269,7 +269,7 @@ int main(int argc, char **argv) {
     core_event_register(str("module_reload"));
     core_event_listen(str("module_reload"), core_module_reload);
 
-    str_hash_print(&event_hashtable);
+
 
     string_temp_t temp = list_init(string_t);
 
@@ -305,7 +305,7 @@ int main(int argc, char **argv) {
             .path = mod_path
         }));
         size_t index = list_size(modules) - 1;
-        str_hash_insert(&module_hashtable, modules[index].name.cstr, index);
+        str_hash_insert(&module_hashtable, modules[index].name, index);
     }     
     
     list_free(mod_names);
@@ -380,13 +380,13 @@ void core_event_register(const string_t name){
     };
     list_push(events, event);
 
-    str_hash_insert(&event_hashtable, event.name.cstr, list_size(events) - 1);
+    str_hash_insert(&event_hashtable, event.name, list_size(events) - 1);
 }
 
 void core_event_trigger (const string_t name, void *context){
-    size_t index = str_hash_lookup(&event_hashtable, name.cstr);
+    size_t index = str_hash_lookup(&event_hashtable, name);
     if(index == STR_HASH_MISSING){
-        core_log(WARNING, "unknown event: %s", name.cstr);
+        core_log(WARNING, "unknown event: %s", name);
         return;
     }
     list_push(event_bus, ((event_trigger_t){
@@ -396,7 +396,7 @@ void core_event_trigger (const string_t name, void *context){
 }
 
 void core_event_listen(const string_t name, event_callback_t callback){
-    size_t index = str_hash_lookup(&event_hashtable, name.cstr);
+    size_t index = str_hash_lookup(&event_hashtable, name);
 
     if(index == STR_HASH_MISSING){
         core_log(WARNING, "unknown event: %s", name.cstr);
@@ -409,7 +409,7 @@ void core_event_listen(const string_t name, event_callback_t callback){
 // ===== ===== Configs ===== =====
 
 void core_config_set(config_t config){ 
-    size_t index = str_hash_lookup(&config_hashtable, config.name.cstr);
+    size_t index = str_hash_lookup(&config_hashtable, config.name);
 
     if(index == STR_HASH_MISSING){
         config_t copy = {
@@ -418,7 +418,7 @@ void core_config_set(config_t config){
             .value = config.type == TYPE_STRING? (config_value_t){.string = string_dup(config.value.string)} : config.value
         };
         list_push(configs, copy);
-        str_hash_insert(&config_hashtable, copy.name.cstr, list_size(configs) - 1);
+        str_hash_insert(&config_hashtable, copy.name, list_size(configs) - 1);
         return;
     }
     if(configs[index].type == TYPE_STRING){
@@ -430,7 +430,7 @@ void core_config_set(config_t config){
 }
 
 config_t core_config_get(const string_t name){
-    uint64_t index = str_hash_lookup(&config_hashtable, name.cstr);
+    uint64_t index = str_hash_lookup(&config_hashtable, name);
     
     if(index == STR_HASH_MISSING){
         return (config_t){.name = str("empty"), .type = EMPTY, .value.integer= 0 };
@@ -442,7 +442,7 @@ config_t core_config_get(const string_t name){
 // ===== ==== Resources ==== =====
 
 resource_t *core_resource_load(const string_t name, const string_t path){
-    size_t index = str_hash_lookup(&resource_hashtable, name.cstr);
+    size_t index = str_hash_lookup(&resource_hashtable, name);
     string_t full_path = string_path(current_directory, str("mods"), path);
 
     if(index == STR_HASH_MISSING){
@@ -458,7 +458,7 @@ resource_t *core_resource_load(const string_t name, const string_t path){
         core_log(INFO, "loaded resource '%s' at %s", name.cstr, path.cstr);
 
         list_push(resources, resource);
-        str_hash_insert(&resource_hashtable, resource.name.cstr, list_size(resources) - 1);
+        str_hash_insert(&resource_hashtable, resource.name, list_size(resources) - 1);
         return &resources[list_size(resources) - 1];
     }
     core_log(INFO, "retrieved resource '%s' at %s", name.cstr, path.cstr);
@@ -466,7 +466,7 @@ resource_t *core_resource_load(const string_t name, const string_t path){
 }
 
 resource_t *core_resource_overload(const string_t name, const string_t new_path){
-    size_t index = str_hash_lookup(&resource_hashtable, name.cstr);
+    size_t index = str_hash_lookup(&resource_hashtable, name);
     string_t full_path = string_path(current_directory, str("mods"), new_path);
 
     resource_t resource = {
@@ -482,7 +482,7 @@ resource_t *core_resource_overload(const string_t name, const string_t new_path)
     if(index == STR_HASH_MISSING){
         core_log(INFO, "loaded resource '%s' at %s", name.cstr, new_path.cstr);
         list_push(resources, resource);
-        str_hash_insert(&resource_hashtable, resource.name.cstr, list_size(resources) - 1);
+        str_hash_insert(&resource_hashtable, resource.name, list_size(resources) - 1);
         return &resources[list_size(resources) - 1];
     }
     core_log(INFO, "overloaded resource '%s' at %s", name.cstr, new_path.cstr);
@@ -511,7 +511,7 @@ string_t core_resource_string(resource_t *resource){
 // ===== ======== Modules ======== =====
 
 version_t core_module_get_version(string_t modid){
-    size_t index = str_hash_lookup(&module_hashtable, modid.cstr);
+    size_t index = str_hash_lookup(&module_hashtable, modid);
     if(index == STR_HASH_MISSING){
         core_log(WARNING, "missing mod '%s'", modid.cstr);
         return (version_t){0, 0, 0};
@@ -521,7 +521,7 @@ version_t core_module_get_version(string_t modid){
 }
 
 interface_t *core_module_get_interface(string_t modid){
-    size_t index = str_hash_lookup(&module_hashtable, modid.cstr);
+    size_t index = str_hash_lookup(&module_hashtable, modid);
     if(index == STR_HASH_MISSING){
         core_log(WARNING, "missing mod '%s'", modid.cstr);
         return NULL;
@@ -531,7 +531,7 @@ interface_t *core_module_get_interface(string_t modid){
 }
 
 function_pointer_t *core_module_get_function(string_t modid, string_t function){ 
-    size_t index = str_hash_lookup(&module_hashtable, modid.cstr);
+    size_t index = str_hash_lookup(&module_hashtable, modid);
     if(index == STR_HASH_MISSING){
         core_log(WARNING, "missing mod '%s'", modid.cstr);
         return NULL;
@@ -544,7 +544,7 @@ void core_module_reload(void *data){
 
     string_t modid = *(string_t*)data;
 
-    size_t index = str_hash_lookup(&module_hashtable, modid.cstr);
+    size_t index = str_hash_lookup(&module_hashtable, modid);
     if(index == STR_HASH_MISSING){
         core_log(ERROR, "mod '%s' not present", modid.cstr);
     } 
@@ -613,7 +613,7 @@ size_t function_owner(function_pointer_t *function_pointer){
 
     #endif
 
-    size_t index = str_hash_lookup(&module_hashtable, module_name.cstr);
+    size_t index = str_hash_lookup(&module_hashtable, module_name);
     str_free(module_name);
 
     return index;

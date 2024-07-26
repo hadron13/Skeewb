@@ -54,6 +54,10 @@
 #endif
 
 
+typedef struct{
+    char  *cstr;
+    ptrdiff_t length;
+}string_t;
 
 typedef struct {
     size_t size, capacity;
@@ -112,6 +116,151 @@ static void *list__join(void *list1, void *list2, size_t element_size){
 
 
 
+#ifndef PATH_SEPARATOR
+#   define PATH_SEPARATOR '/'
+#   define PATH_SEPARATOR_STR "/"
+#endif 
+
+
+
+#define str(cstring) ((string_t){.length = strlen(cstring), .cstr = (cstring)})
+#define str_null     ((string_t){.length = 0, .cstr = NULL})
+#define str_alloc(str_size) ((string_t){.length = (str_size), .cstr = malloc((str_size) + 1)})
+#define str_free(string) (free((string).cstr))
+
+#define string_join(...)  (string_join_(str(""),__VA_ARGS__, str_null))
+#define string_path(...)  (string_join_(str(PATH_SEPARATOR_STR),__VA_ARGS__, str_null))
+#define string_join_sep(separator, ...)  (string_join_((separator),__VA_ARGS__, str_null))
+
+static string_t string_join_(string_t separator, ...);
+static string_t string_dup(string_t string);
+static string_t string_dup_len(string_t string, size_t length);
+static bool     string_equal(string_t a, string_t b);
+static string_t string_get_ext(string_t filename);
+static string_t string_get_path(string_t filename);
+
+typedef string_t* string_temp_t;
+
+static string_t str_temp(string_temp_t *temp, string_t string);
+static void     str_temp_free(string_temp_t temp);
+#define  str_temp_join(temp, ...) (str_temp(temp, string_join_(str(""),__VA_ARGS__, str_null)))
+
+
+
+static string_t string_join_(string_t separator, ...){
+    va_list args;
+    va_start(args, separator);
+    
+    size_t total_size = 0;
+    string_t current_string = va_arg(args, string_t);
+
+    while(current_string.cstr != NULL){
+        total_size += current_string.length + separator.length; 
+        current_string = va_arg(args, string_t);
+    }
+    total_size -= separator.length;
+    va_end(args);
+
+    string_t joined_string = str_alloc(total_size);
+    va_start(args, separator);
+    
+    for(size_t current_character = 0; current_character < total_size;){
+        if(current_character != 0){
+            memcpy(joined_string.cstr + current_character, separator.cstr, separator.length);
+            current_character += separator.length;
+        }
+        string_t current_string = va_arg(args, string_t);
+
+        memcpy(joined_string.cstr + current_character, current_string.cstr, current_string.length);
+        current_character += current_string.length;
+    }
+    joined_string.cstr[total_size] = '\0';
+    va_end(args);
+    return joined_string;
+}
+
+static string_t string_dup(string_t string){
+    string_t duplicated = str_alloc(string.length);
+    memcpy(duplicated.cstr, string.cstr, string.length);
+    duplicated.cstr[string.length] = '\0';
+    return duplicated;
+}
+
+static string_t string_dup_len(string_t string, size_t length){
+    string_t duplicated = str_alloc(string.length);
+    memcpy(duplicated.cstr, string.cstr, length);
+    duplicated.cstr[length] = '\0';
+    return duplicated;
+}
+
+static bool string_equal(string_t a, string_t b){
+    return a.length == b.length && memcmp(a.cstr, b.cstr, a.length) == 0;
+}
+
+
+static string_t string_get_ext(string_t filename){
+    if(!filename.cstr)
+        return str_null;
+    char *last_point= strrchr(filename.cstr, '.');
+    if(!last_point)
+        return filename;
+    return string_dup(str(last_point));
+}
+
+static string_t string_get_filename_no_ext(string_t filename){
+    
+    char *last_slash = strrchr(filename.cstr, PATH_SEPARATOR);
+    if(!last_slash) last_slash = filename.cstr;
+    last_slash += 1;
+
+    char *filename_dot = strchr(last_slash, '.');
+    if(!filename_dot) filename_dot = filename.cstr + filename.length - 1;
+    return string_dup_len(
+        (string_t){
+            .cstr = last_slash,
+            .length = filename_dot - last_slash,
+        },
+        filename_dot - last_slash
+    );
+
+}
+
+static string_t string_get_path(string_t filename){
+    if(!filename.cstr)
+        return str_null;
+    
+    char *last_slash = strrchr(filename.cstr, PATH_SEPARATOR);
+#   ifdef WINDOWS
+    char *alt_slash = strrchr(filename.cstr, '/');
+    if(alt_slash && alt_slash > last_slash){
+        last_slash = alt_slash;
+    }
+#   endif
+    
+    if(!last_slash)
+        return filename;
+    return string_dup_len((string_t){
+        .cstr = filename.cstr,
+        .length = last_slash - filename.cstr
+    }, last_slash - filename.cstr);
+}
+
+        
+
+static string_t str_temp(string_temp_t *arena, string_t str){
+    list_push(*arena, str);
+    return str;
+}
+
+static void str_temp_free(string_temp_t temp){
+    for(size_t i = 0; i < list_size(temp); i++){
+        str_free(temp[i]);
+    }
+    list_free(temp);
+}
+
+
+
 /*
  *  ||      ||     /\     //===\\  ||      ||  ========    /\     ||==\\   ||     ======
  *  ||      ||    //\\    ||       ||      ||     ||      //\\    ||   ||  ||     ||
@@ -149,7 +298,7 @@ typedef struct{
     size_t length;
     size_t exponent;
     size_t tombstones;
-    char **keys;
+    string_t *keys;
     uint64_t *values;
 }str_hash_t;
 
@@ -178,9 +327,9 @@ static uint64_t fnv1a_hash(const unsigned char *data, size_t length);
 
 static str_hash_t str_hash_create(size_t initial_exponent);
 static void       str_hash_resize(str_hash_t *hash_table, size_t new_exponent);
-static void       str_hash_insert(str_hash_t *restrict hash_table, const char *restrict key, uint64_t value);
-static uint64_t   str_hash_lookup(str_hash_t *restrict hash_table, const char *restrict key);
-static uint64_t   str_hash_delete(str_hash_t *restrict hash_table, const char *restrict key);
+static void       str_hash_insert(str_hash_t *restrict hash_table, string_t key, uint64_t value);
+static uint64_t   str_hash_lookup(str_hash_t *restrict hash_table, string_t key);
+static uint64_t   str_hash_delete(str_hash_t *restrict hash_table, string_t key);
 static void       str_hash_destroy(str_hash_t *hash_table);
 static void       str_hash_print(str_hash_t *hash_table);
 
@@ -250,7 +399,7 @@ static void str_hash_resize(str_hash_t *hash_table, size_t new_exponent){
     str_hash_t new_hash = str_hash_create(new_exponent);
 
     for(size_t i = 0; i < old_size; i++){
-        if(hash_table->keys[i] == NULL || hash_table->keys[i] == STR_HASH_GRAVESTONE)
+        if(hash_table->keys[i].cstr == NULL || hash_table->keys[i].cstr == STR_HASH_GRAVESTONE)
             continue;
         
         str_hash_insert(&new_hash, hash_table->keys[i], hash_table->values[i]);
@@ -259,39 +408,39 @@ static void str_hash_resize(str_hash_t *hash_table, size_t new_exponent){
     *hash_table = new_hash;
 }
 
-static void str_hash_insert(str_hash_t *restrict hash_table, const char * restrict key, uint64_t value){    
+static void str_hash_insert(str_hash_t *restrict hash_table, string_t key, uint64_t value){    
 
     if(hash_table->length + 1  == (1 << hash_table->exponent) - ((1 << hash_table->exponent) >> 1) || 
         hash_table->tombstones > hash_table->length >> 2){
         str_hash_resize(hash_table, hash_table->exponent + 1);
     }
 
-    uint64_t hash = fnv1a_hash((unsigned char*)key, strlen(key));
+    uint64_t hash = fnv1a_hash((unsigned char*)key.cstr, key.length);
     for(int32_t index = hash;;){
         index = msi_lookup(hash, hash_table->exponent, index);
 
-        if(hash_table->keys[index] != NULL && hash_table->keys[index] != STR_HASH_GRAVESTONE && strcmp(hash_table->keys[index], key) != 0){
+        if(hash_table->keys[index].cstr != NULL && hash_table->keys[index].cstr != STR_HASH_GRAVESTONE && !string_equal(hash_table->keys[index], key)){
             continue;
         }
 
-        hash_table->keys[index] = (char*)key;
+        hash_table->keys[index] = key;
         hash_table->values[index] = value;
         hash_table->length++;
         return;
     }
 }
 
-static uint64_t str_hash_lookup(str_hash_t * restrict hash_table, const char *restrict key){
-    uint64_t hash = fnv1a_hash((unsigned char*)key, strlen(key));
+static uint64_t str_hash_lookup(str_hash_t * restrict hash_table, string_t key){
+    uint64_t hash = fnv1a_hash((unsigned char*)key.cstr, key.length);
     for(int32_t index = hash;;){
         index = msi_lookup(hash, hash_table->exponent, index);
         
-        if(hash_table->keys[index] == NULL)
+        if(hash_table->keys[index].cstr == NULL)
             return STR_HASH_MISSING;
-        if(hash_table->keys[index] == STR_HASH_GRAVESTONE)
+        if(hash_table->keys[index].cstr == STR_HASH_GRAVESTONE)
             continue;
 
-        if(hash_table->keys[index][0] != key[0] || strcmp(hash_table->keys[index], key) != 0){
+        if(!string_equal(hash_table->keys[index], key)){
             continue;
         }
         
@@ -299,18 +448,19 @@ static uint64_t str_hash_lookup(str_hash_t * restrict hash_table, const char *re
     }
 }
 
-static uint64_t str_hash_delete(str_hash_t * restrict hash_table, const char *restrict key){
-    uint64_t hash = fnv1a_hash((unsigned char*)key, strlen(key));
+static uint64_t str_hash_delete(str_hash_t * restrict hash_table, string_t key){
+    uint64_t hash = fnv1a_hash((unsigned char*)key.cstr, key.length);
     for(int32_t index = hash;;){
         index = msi_lookup(hash, hash_table->exponent, index);
         
-        if(hash_table->keys[index] == NULL)
+        if(hash_table->keys[index].cstr == NULL)
             return 0;
 
-        if(strcmp(hash_table->keys[index], key) != 0){
+        if(!string_equal(hash_table->keys[index], key)){
             continue;
         }
-        hash_table->keys[index] = (char*)STR_HASH_GRAVESTONE;
+        hash_table->keys[index].cstr = (char*)STR_HASH_GRAVESTONE;
+        hash_table->keys[index].length = -1;
         hash_table->tombstones++;
         return hash_table->values[index];
     }
@@ -323,13 +473,7 @@ static void str_hash_destroy(str_hash_t *hash_table){
     free(hash_table->values);
 }
 
-static void str_hash_print(str_hash_t *hash_table){
-    for(size_t i = 0; i < (1 << hash_table->exponent); i++){
-        if(hash_table->keys[i] == NULL || hash_table->keys[i] == STR_HASH_GRAVESTONE)
-            return;
-        printf("%s - %lu\n", hash_table->keys[i], hash_table->values[i]);
-    }
-}
+
 
 
 
@@ -567,155 +711,6 @@ void *arena_push(arena_t *arena, void *data, size_t size){
 
 
 
-
-
-
-#ifndef PATH_SEPARATOR
-#   define PATH_SEPARATOR '/'
-#   define PATH_SEPARATOR_STR "/"
-#endif 
-
-
-typedef struct{
-    char  *cstr;
-    ptrdiff_t length;
-}string_t;
-
-#define str(cstring) ((string_t){.length = strlen(cstring), .cstr = (cstring)})
-#define str_null     ((string_t){.length = 0, .cstr = NULL})
-#define str_alloc(str_size) ((string_t){.length = (str_size), .cstr = malloc((str_size) + 1)})
-#define str_free(string) (free((string).cstr))
-
-#define string_join(...)  (string_join_(str(""),__VA_ARGS__, str_null))
-#define string_path(...)  (string_join_(str(PATH_SEPARATOR_STR),__VA_ARGS__, str_null))
-#define string_join_sep(separator, ...)  (string_join_((separator),__VA_ARGS__, str_null))
-
-static string_t string_join_(string_t separator, ...);
-static string_t string_dup(string_t string);
-static string_t string_dup_len(string_t string, size_t length);
-static bool     string_equal(string_t a, string_t b);
-static string_t string_get_ext(string_t filename);
-static string_t string_get_path(string_t filename);
-
-typedef string_t* string_temp_t;
-
-static string_t str_temp(string_temp_t *temp, string_t string);
-static void     str_temp_free(string_temp_t temp);
-#define  str_temp_join(temp, ...) (str_temp(temp, string_join_(str(""),__VA_ARGS__, str_null)))
-
-
-
-static string_t string_join_(string_t separator, ...){
-    va_list args;
-    va_start(args, separator);
-    
-    size_t total_size = 0;
-    string_t current_string = va_arg(args, string_t);
-
-    while(current_string.cstr != NULL){
-        total_size += current_string.length + separator.length; 
-        current_string = va_arg(args, string_t);
-    }
-    total_size -= separator.length;
-    va_end(args);
-
-    string_t joined_string = str_alloc(total_size);
-    va_start(args, separator);
-    
-    for(size_t current_character = 0; current_character < total_size;){
-        if(current_character != 0){
-            memcpy(joined_string.cstr + current_character, separator.cstr, separator.length);
-            current_character += separator.length;
-        }
-        string_t current_string = va_arg(args, string_t);
-
-        memcpy(joined_string.cstr + current_character, current_string.cstr, current_string.length);
-        current_character += current_string.length;
-    }
-    joined_string.cstr[total_size] = '\0';
-    va_end(args);
-    return joined_string;
-}
-
-static string_t string_dup(string_t string){
-    string_t duplicated = str_alloc(string.length);
-    memcpy(duplicated.cstr, string.cstr, string.length);
-    duplicated.cstr[string.length] = '\0';
-    return duplicated;
-}
-
-static string_t string_dup_len(string_t string, size_t length){
-    string_t duplicated = str_alloc(string.length);
-    memcpy(duplicated.cstr, string.cstr, length);
-    duplicated.cstr[length] = '\0';
-    return duplicated;
-}
-
-static bool string_equal(string_t a, string_t b){
-    return a.length == b.length && memcmp(a.cstr, b.cstr, a.length) == 0;
-}
-
-
-static string_t string_get_ext(string_t filename){
-    if(!filename.cstr)
-        return str_null;
-    char *last_point= strrchr(filename.cstr, '.');
-    if(!last_point)
-        return filename;
-    return string_dup(str(last_point));
-}
-
-static string_t string_get_filename_no_ext(string_t filename){
-    
-    char *last_slash = strrchr(filename.cstr, PATH_SEPARATOR);
-    if(!last_slash) last_slash = filename.cstr;
-    last_slash += 1;
-
-    char *filename_dot = strchr(last_slash, '.');
-    if(!filename_dot) filename_dot = filename.cstr + filename.length - 1;
-    return string_dup_len(
-        (string_t){
-            .cstr = last_slash,
-            .length = filename_dot - last_slash,
-        },
-        filename_dot - last_slash
-    );
-
-}
-
-static string_t string_get_path(string_t filename){
-    if(!filename.cstr)
-        return str_null;
-    
-    char *last_slash = strrchr(filename.cstr, PATH_SEPARATOR);
-#   ifdef WINDOWS
-    char *alt_slash = strrchr(filename.cstr, '/');
-    if(alt_slash && alt_slash > last_slash){
-        last_slash = alt_slash;
-    }
-#   endif
-    
-    if(!last_slash)
-        return filename;
-    return string_dup_len((string_t){
-        .cstr = filename.cstr,
-        .length = last_slash - filename.cstr
-    }, last_slash - filename.cstr);
-}
-
-        
-
-static string_t str_temp(string_temp_t *arena, string_t str){
-    list_push(*arena, str);
-    return str;
-}
-
-static void str_temp_free(string_temp_t temp){
-    for(size_t i = 0; i < list_size(temp); i++){
-        str_free(temp[i]);
-    }
-    list_free(temp);
-}
 
 
 #endif 
