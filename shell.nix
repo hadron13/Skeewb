@@ -6,7 +6,8 @@ in
 pkgs.mkShell.override { stdenv = pkgs.clangStdenv; }
 {  
   packages = with pkgs; [
-    cmake
     libGL
+    SDL2
+    odin
   ];  
 }

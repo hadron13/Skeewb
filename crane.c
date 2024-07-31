@@ -15,17 +15,19 @@
 #ifndef RPATH
 #   ifdef UNIX
 #   define RPATH " -Wl,-rpath,'$ORIGIN'/. "
+#   define ODIN_RPATH "-extra-linker-flags:\"-rpath '$ORIGIN/.'\""
 #   else 
 #   define RPATH
+#   define ODIN_RPATH 
 #endif
 #endif 
 
 #ifndef LIB 
-#   define LIB " -Lsrc/libs/SDL/build "
+#   define LIB " -Lskeewb/libs/SDL/build "
 #endif 
 
 #ifndef INCLUDE
-#   define INCLUDE " -Isrc/libs/SDL/include -Isrc/libs -Isrc/libs/cglm/include -Isrc/"
+#   define INCLUDE " -Iskeewb/libs/SDL/include -Isrc/libs -Isrc/libs/cglm/include -Isrc/"
 #endif 
 
 
@@ -70,7 +72,7 @@ int main(int argc, char **argv){
     rebuild(argc, argv);
     string_temp_t temp = list_init(string_t);
     
-    if(argc > 1 && strcmp(argv[1], "example") == 0){
+    if(argc > 1 && strcmp(argv[1], "example") == 0){ // TODO: update this!
         crane_log(INFO, "creating example mod");
 
         make_directory(str("examplemod"));
@@ -102,9 +104,9 @@ int main(int argc, char **argv){
         fwrite(code.cstr, code.length, 1, examplemod_c);
         fclose(examplemod_c);
 
-        copy(str("src/ds.h"), str("examplemod/skeewb/ds.h"));
-        copy(str("src/skeewb.h"), str("examplemod/skeewb/skeewb.h"));
-        copy(str("src/renderer/renderer.h"), str("examplemod/skeewb/renderer.h"));
+        copy(str("skeewb/ds.h"), str("examplemod/skeewb/ds.h"));
+        copy(str("skeewb/skeewb.h"), str("examplemod/skeewb/skeewb.h"));
+        copy(str("skeewb/renderer/renderer.h"), str("examplemod/skeewb/renderer.h"));
        
         exit(0);
     }
@@ -120,41 +122,19 @@ int main(int argc, char **argv){
     make_directory(str("build/mods/renderer/assets/textures")); 
     make_directory(str("build/mods/world"));
 
-    if(system("cmake" SILENCE) == 0 && !file_exists(str("build/mods/renderer/" SDL_DYLIB))){
-#       ifdef UNIX
-        crane_log(INFO, "configuring SDL3 cmake (might take a while)...");
-        if(system("cmake -S src/libs/SDL/ -B src/libs/SDL/build" SILENCE)){
-            crane_log(ERROR, "could not configure SDL3 cmake");
-            exit(-1);
-        }
-#       elif defined(WINDOWS)
-        crane_log(INFO, "configuring SDL3 cmake (might take a while)...");
-        if(system("cmake -S src\\libs\\SDL -B src\\libs\\SDL\\build -DCMAKE_TOOLCHAIN_FILE=build-scripts\\cmake-toolchain-mingw64-x86_64.cmake -G\"MinGW Makefiles\"")){
-            crane_log(ERROR, "could not configure SDL3 cmake");
-            exit(-1);
-        }
-#       endif
-
-        crane_log(INFO, "building SDL3 (might take a while)...");
-        if(system("cmake --build src/libs/SDL/build " SILENCE)){
-            crane_log(ERROR, "could not compile SDL3");
-            exit(-1);
-        }
-
-        copy(str("src/libs/SDL/build/" SDL_DYLIB), str("build/mods/renderer/" SDL_DYLIB));    
-    } 
     
-    compile(str("build/skeewb" EXEC_EXT), str(CORE_CFLAGS), str("src/skeewb.c") );
+    compile(str("build/skeewb" EXEC_EXT), str(CORE_CFLAGS), str("skeewb/core/skeewb.c") );
 
-    compile(str("build/mods/renderer/renderer" DYLIB_EXT), str(RENDERER_FLAGS),    
-            str("src/renderer/renderer.c"));
     
     compile(str("build/mods/world/world" DYLIB_EXT), str(MODULE_CFLAGS),    
-            str("src/world/world.c"));
+            str("skeewb/world/world.c"));
+    
+    //TODO: compile() but Odin
+    system("odin build skeewb/renderer -out=build/mods/renderer/renderer.so -build-mode:shared -collection:skeewb=skeewb -define:MODULE=\"Renderer\" " ODIN_RPATH);
     
     
-    copy(str("src/renderer/assets/shaders/*"), str("build/mods/renderer/assets/shaders/"));
-    copy(str("src/renderer/assets/textures/*"), str("build/mods/renderer/assets/textures/"));
+    copy(str("skeewb/renderer/assets/shaders/*"), str("build/mods/renderer/assets/shaders/"));
+    copy(str("skeewb/renderer/assets/textures/*"), str("build/mods/renderer/assets/textures/"));
     
     str_temp_free(temp);
 }
