@@ -130,7 +130,7 @@ int main(int argc, char **argv){
             str("skeewb/world/world.c"));
     
     //TODO: compile() but Odin
-    system("odin build skeewb/renderer -out=build/mods/renderer/renderer.so -build-mode:shared -collection:skeewb=skeewb -define:MODULE=\"Renderer\" " ODIN_RPATH);
+    system("odin build skeewb/renderer -out=build/mods/renderer/renderer" DYLIB_EXT " -build-mode:shared -collection:skeewb=skeewb -define:MODULE=\"Renderer\" " ODIN_RPATH);
     
     
     copy(str("skeewb/renderer/assets/shaders/*"), str("build/mods/renderer/assets/shaders/"));

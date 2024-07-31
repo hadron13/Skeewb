@@ -32,7 +32,7 @@ start :: proc"c"(core: ^skeewb.core_interface){
     sdl2.GL_SetAttribute(sdl2.GLattr.CONTEXT_MAJOR_VERSION, 3)
     sdl2.GL_SetAttribute(sdl2.GLattr.CONTEXT_MINOR_VERSION, 3)
     sdl2.GL_SetAttribute(sdl2.GLattr.CONTEXT_PROFILE_MASK, i32(sdl2.GLprofile.CORE))
-
+    
 
 
     window = sdl2.CreateWindow("Skeewb", sdl2.WINDOWPOS_CENTERED, sdl2.WINDOWPOS_CENTERED, 600, 400, sdl2.WINDOW_RESIZABLE | sdl2.WINDOW_OPENGL)

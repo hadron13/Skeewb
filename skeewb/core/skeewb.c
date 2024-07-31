@@ -231,7 +231,14 @@ int main(int argc, char **argv) {
         GetModuleFileNameA(NULL, path_buffer, 256);
 
         current_directory = string_get_path(str(path_buffer));
-        ShowWindow(GetConsoleWindow(), SW_HIDE);
+
+        HWND consoleWnd = GetConsoleWindow();
+        DWORD dwProcessId;
+        GetWindowThreadProcessId(consoleWnd, &dwProcessId);
+        if (GetCurrentProcessId()==dwProcessId){
+            ShowWindow(GetConsoleWindow(), SW_HIDE);
+        }
+
     }
     #elif defined(UNIX)
     current_directory = string_get_path(str(argv[0]));
