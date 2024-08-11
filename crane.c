@@ -23,11 +23,11 @@
 #endif 
 
 #ifndef LIB 
-#   define LIB " -Lskeewb/libs/SDL/build "
+#   define LIB 
 #endif 
 
 #ifndef INCLUDE
-#   define INCLUDE " -Iskeewb/libs/SDL/include -Isrc/libs -Isrc/libs/cglm/include -Isrc/"
+#   define INCLUDE " -Iskeewb/"
 #endif 
 
 
@@ -116,25 +116,21 @@ int main(int argc, char **argv){
     make_directory(str("build"));
     make_directory(str("intermediates"));
     make_directory(str("build/mods"));
-    make_directory(str("build/mods/renderer"));
-    make_directory(str("build/mods/renderer/assets/"));
-    make_directory(str("build/mods/renderer/assets/shaders"));
-    make_directory(str("build/mods/renderer/assets/textures")); 
-    make_directory(str("build/mods/world"));
+    make_directory(str("build/mods/basalt"));
+    make_directory(str("build/mods/basalt/assets/"));
+    make_directory(str("build/mods/basalt/assets/shaders"));
+    make_directory(str("build/mods/basalt/assets/textures")); 
 
     
-    compile(str("build/skeewb" EXEC_EXT), str(CORE_CFLAGS), str("skeewb/core/skeewb.c") );
+    compile(str("build/skeewb" EXEC_EXT), str(CORE_CFLAGS), str("src/core/skeewb.c") );
 
-    
-    compile(str("build/mods/world/world" DYLIB_EXT), str(MODULE_CFLAGS),    
-            str("skeewb/world/world.c"));
     
     //TODO: compile() but Odin
-    system("odin build skeewb/renderer -out=build/mods/renderer/renderer" DYLIB_EXT " -build-mode:shared -collection:skeewb=skeewb -define:MODULE=\"Renderer\" " ODIN_RPATH);
+    system("odin build src/basalt -o:speed -out=build/mods/basalt/basalt" DYLIB_EXT " -build-mode:shared -collection:skeewb=src -define:MODULE=\"Renderer\" " ODIN_RPATH);
     
     
-    copy(str("skeewb/renderer/assets/shaders/*"), str("build/mods/renderer/assets/shaders/"));
-    copy(str("skeewb/renderer/assets/textures/*"), str("build/mods/renderer/assets/textures/"));
+    copy(str("src/basalt/assets/shaders/*"), str("build/mods/basalt/assets/shaders/"));
+    copy(str("src/basalt/assets/textures/*"), str("build/mods/basalt/assets/textures/"));
     
     str_temp_free(temp);
 }

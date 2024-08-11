@@ -131,7 +131,6 @@ LPSTR GetLastErrorAsString(void);
 #endif
 
 
-
 //  ===== PLATFORM =====
 string_t             *platform_list_directory(string_t directory_path, bool directories); // returns dynamic array of strings
 shared_object_t      *platform_library_load(string_t path);
