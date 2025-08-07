@@ -1,6 +1,6 @@
 # Skeewb
 > ## A minimalist, modular voxel game/engine with focus on flexibility and performance 
-
+Surpassed by [Slate](https://github.com/hadron13/sSlate), basically same thing but written in odin, by an older & wiser me
 # Modules
 
 The whole engine is split into different, swappable modules, which are libraries (.dll/.so) loaded at runtime by the core executable.
@@ -33,3 +33,4 @@ gcc crane.c -o crane # examplemod's own crane
 ```
 
 Check the [wiki](https://github.com/hadron13/Skeewb/wiki) for more information.
+
